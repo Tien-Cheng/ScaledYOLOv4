@@ -72,6 +72,13 @@ def train(hyp, opt, device, tb_writer=None):
         model = Model(opt.cfg, ch=3, nc=nc).to(device)# create
         #model = model.to(memory_format=torch.channels_last)  # create
 
+    freeze = ['model.%s.' % x for x in range(opt.freeze+1)]  # parameter names to freeze (full or partial)
+    for k, v in model.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+
     # Optimizer
     nbs = 64  # nominal batch size
     accumulate = max(round(nbs / total_batch_size), 1)  # accumulate loss before optimizing
@@ -79,7 +86,6 @@ def train(hyp, opt, device, tb_writer=None):
 
     pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
     for k, v in model.named_parameters():
-        v.requires_grad = True
         if '.bias' in k:
             pg2.append(v)  # biases
         elif '.weight' in k and '.bn' not in k:
@@ -374,6 +380,7 @@ def train(hyp, opt, device, tb_writer=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='yolov4-p5.pt', help='initial weights path')
+    parser.add_argument('--freeze', type=int, help='Last layer num to freeze. To freeze layers 0-10, input 10')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='', help='hyperparameters path, i.e. data/hyp.scratch.yaml')
@@ -395,7 +402,7 @@ if __name__ == '__main__':
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
-    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+    parser.add_argument('--local-rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--logdir', type=str, default='runs/', help='logging directory')
     opt = parser.parse_args()
 
