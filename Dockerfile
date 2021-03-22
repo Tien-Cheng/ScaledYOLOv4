@@ -7,6 +7,7 @@ WORKDIR $cwd
 
 RUN apt-get -y update
 # RUN apt-get -y upgrade
+RUN apt -y update
 
 RUN apt-get install -y \
     software-properties-common \

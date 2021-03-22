@@ -11,5 +11,3 @@ docker run -it \
 	-e QT_X11_NO_MITSHM=1 \
 	--shm-size=64g \
 	scaled_yolov4
-
-# --user "$(id -u):$(id -g)" \
