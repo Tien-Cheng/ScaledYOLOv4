@@ -1,5 +1,8 @@
 # YOLOv4-large
 
+## Adapted/Forked from [WongKinYiu's repo](https://github.com/WongKinYiu/ScaledYOLOv4)
+Last "merge" date: 26th March 2021
+
 This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Network](https://arxiv.org/abs/2011.08036)" using PyTorch framwork.
 
 | Model | Test Size | AP<sup>test</sup> | AP<sub>50</sub><sup>test</sup> | AP<sub>75</sub><sup>test</sup> | AP<sub>S</sub><sup>test</sup> | AP<sub>M</sub><sup>test</sup> | AP<sub>L</sub><sup>test</sup> | batch1 throughput |
@@ -29,17 +32,11 @@ This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Netwo
 ## Installation
 
 ```
-# create the docker container, you can change the share memory size if you have more.
-nvidia-docker run --name yolov4_csp -it -v your_coco_path/:/coco/ -v your_code_path/:/yolo --shm-size=64g nvcr.io/nvidia/pytorch:20.06-py3
+# build the docker container
+docker build -t scaled_yolov4 --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=$(id -g) .
 
-# install mish-cuda, if you use different pytorch version, you could try https://github.com/thomasbrandon/mish-cuda
-cd /
-git clone https://github.com/JunnYu/mish-cuda
-cd mish-cuda
-python setup.py build install
-
-# go to code folder
-cd /yolo
+# run the docker container
+./run_docker.sh
 ```
 
 ## Testing
