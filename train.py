@@ -85,8 +85,8 @@ def train(hyp, opt, device, tb_writer=None):
             v.requires_grad = False
 
     # Optimizer
-    accumulate = max(round(opt.nbs / total_batch_size), 1)  # accumulate loss before optimizing
-    hyp['weight_decay'] *= total_batch_size * accumulate / opt.nbs  # scale weight_decay
+    accumulate = max(round(opt.nominal_batch_size / total_batch_size), 1)  # accumulate loss before optimizing
+    hyp['weight_decay'] *= total_batch_size * accumulate / opt.nominal_batch_size  # scale weight_decay
 
     def backboneOrHead(k):
         return 'backbone' if any(x in k for x in backbone) else 'head'
@@ -174,7 +174,7 @@ def train(hyp, opt, device, tb_writer=None):
     # Trainloader
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt, hyp=hyp, augment=True,
                                             cache=opt.cache_images, rect=opt.rect, local_rank=rank,
-                                            world_size=opt.world_size)
+                                            world_size=opt.world_size, image_weights=opt.image_weights)
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, opt.data, nc - 1)
@@ -225,7 +225,7 @@ def train(hyp, opt, device, tb_writer=None):
         model.train()
 
         # Update image weights (optional)
-        if dataset.image_weights:
+        if opt.image_weights:
             # Generate indices
             if rank in [-1, 0]:
                 w = model.class_weights.cpu().numpy() * (1 - maps) ** 2  # class weights
@@ -261,7 +261,7 @@ def train(hyp, opt, device, tb_writer=None):
             if ni <= nw:
                 xi = [0, nw]  # x interp
                 # model.gr = np.interp(ni, xi, [0.0, 1.0])  # giou loss ratio (obj_loss = 1.0 or giou)
-                accumulate = max(1, np.interp(ni, xi, [1, opt.nbs / total_batch_size]).round())
+                accumulate = max(1, np.interp(ni, xi, [1, opt.nominal_batch_size / total_batch_size]).round())
                 for j, x in enumerate(optimizer.param_groups):
                     # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                     x['lr'] = np.interp(ni, xi, [0.1 if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
@@ -418,6 +418,7 @@ if __name__ == '__main__':
     parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
+    parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
     parser.add_argument('--name', default='', help='renames results.txt to results_name.txt if supplied')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')

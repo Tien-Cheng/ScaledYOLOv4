@@ -48,13 +48,14 @@ def exif_size(img):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
-                      local_rank=-1, world_size=1):
+                      local_rank=-1, world_size=1, image_weights=False):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache.
     with torch_distributed_zero_first(local_rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
                                       augment=augment,  # augment images
                                       hyp=hyp,  # augmentation hyperparameters
                                       rect=rect,  # rectangular training
+                                      image_weights=image_weights,
                                       cache_images=cache,
                                       single_cls=opt.single_cls,
                                       stride=int(stride),
@@ -335,6 +336,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         nb = bi[-1] + 1  # number of batches
 
         self.n = n  # number of images
+        self.indices = range(n)
         self.batch = bi  # batch index of image
         self.img_size = img_size
         self.augment = augment
@@ -351,12 +353,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         # Check cache
         cache_path = str(Path(self.label_files[0]).parent) + '.cache'  # cached labels
-        if os.path.isfile(cache_path):
-            cache = torch.load(cache_path)  # load
-            if cache['hash'] != get_hash(self.label_files + self.img_files):  # dataset changed
-                cache = self.cache_labels(cache_path)  # re-cache
-        else:
-            cache = self.cache_labels(cache_path)  # cache
+        # if os.path.isfile(cache_path):
+        #     cache = torch.load(cache_path)  # load
+        #     if cache['hash'] != get_hash(self.label_files + self.img_files):  # dataset changed
+        #         cache = self.cache_labels(cache_path)  # re-cache
+        # else:
+        #     cache = self.cache_labels(cache_path)  # cache
+        cache = self.cache_labels(cache_path)
 
         # Get labels
         labels, shapes = zip(*[cache[x] for x in self.img_files])
@@ -492,8 +495,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
     #     return self
 
     def __getitem__(self, index):
-        if self.image_weights:
-            index = self.indices[index]
+        index = self.indices[index]  # linear, shuffled, or image_weights
 
         hyp = self.hyp
         if self.mosaic:
@@ -503,7 +505,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
             # MixUp https://arxiv.org/pdf/1710.09412.pdf
             if random.random() < hyp['mixup']:
-                img2, labels2 = load_mosaic(self, random.randint(0, len(self.labels) - 1))
+                img2, labels2 = load_mosaic(self, random.randint(0, self.n - 1))
                 r = np.random.beta(8.0, 8.0)  # mixup ratio, alpha=beta=8.0
                 img = (img * r + img2 * (1 - r)).astype(np.uint8)
                 labels = np.concatenate((labels, labels2), 0)
@@ -625,7 +627,7 @@ def load_mosaic(self, index):
     labels4 = []
     s = self.img_size
     yc, xc = s, s  # mosaic center x, y
-    indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(3)]  # 3 additional image indices
+    indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
         # Load image
         img, _, (h, w) = load_image(self, index)
