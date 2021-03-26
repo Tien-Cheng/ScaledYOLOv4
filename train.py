@@ -50,7 +50,7 @@ def train(hyp, opt, device, tb_writer=None):
     cuda = device.type != 'cpu'
     init_seeds(2 + rank)
     with open(opt.data) as f:
-        data_dict = yaml.load(f, Loader=yaml.FullLoader)  # model dict
+        data_dict = yaml.load(f, Loader=yaml.FullLoader)  # data dict
     train_path = data_dict['train']
     test_path = data_dict['val']
     nc, names = (1, ['item']) if opt.single_cls else (int(data_dict['nc']), data_dict['names'])  # number classes, names
@@ -72,10 +72,12 @@ def train(hyp, opt, device, tb_writer=None):
         model = Model(opt.cfg, ch=3, nc=nc).to(device)# create
         #model = model.to(memory_format=torch.channels_last)  # create
 
-    freeze = []
-    if opt.freeze:
-        # parameter names to freeze (full or partial)
-        freeze = ['model.%s.' % x for x in range(opt.freeze+1)]
+    with open(opt.cfg) as f:
+        model_dict = yaml.load(f, Loader=yaml.FullLoader)  # model dict
+    num_backbone_layers = len(model_dict['backbone'])
+    backbone = ['model.%s.' % x for x in range(num_backbone_layers)]
+
+    freeze = backbone if opt.freeze_backbone else []
     for k, v in model.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -87,22 +89,38 @@ def train(hyp, opt, device, tb_writer=None):
     accumulate = max(round(nbs / total_batch_size), 1)  # accumulate loss before optimizing
     hyp['weight_decay'] *= total_batch_size * accumulate / nbs  # scale weight_decay
 
-    pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
+    def backboneOrHead(k):
+        return 'backbone' if any(x in k for x in backbone) else 'head'
+
+    # optimizer parameter groups
+    pg0 = {'backbone': [], 'head': []}
+    pg1 = {'backbone': [], 'head': []}
+    pg2 = {'backbone': [], 'head': []}
     for k, v in model.named_parameters():
+        index = backboneOrHead(k)
         if '.bias' in k:
-            pg2.append(v)  # biases
+            pg2[index].append(v)  # biases
         elif '.weight' in k and '.bn' not in k:
-            pg1.append(v)  # apply weight decay
+            pg1[index].append(v)  # apply weight decay
         else:
-            pg0.append(v)  # all else
+            pg0[index].append(v)  # all else
+
+    backbone_lr = float(hyp['lr0'] / opt.diff_backbone_lr)
+
+    optim_groups = [{'params': pg0['head']}]
+    optim_groups.append({'params': pg0['backbone'], 'lr': backbone_lr})
 
     if opt.adam:
-        optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
+        optimizer = optim.Adam(optim_groups, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
-        optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+        optimizer = optim.SGD(optim_groups, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
 
-    optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
-    optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
+    # add pg1 with weight_decay
+    optimizer.add_param_group({'params': pg1['head'], 'weight_decay': hyp['weight_decay']})
+    optimizer.add_param_group({'params': pg1['backbone'], 'lr': backbone_lr, 'weight_decay': hyp['weight_decay']})
+     # add pg2 (biases)
+    optimizer.add_param_group({'params': pg2['head']})
+    optimizer.add_param_group({'params': pg2['backbone'], 'lr': backbone_lr})
     print('Optimizer groups: %g .bias, %g conv.weight, %g other' % (len(pg2), len(pg1), len(pg0)))
     del pg0, pg1, pg2
 
@@ -352,7 +370,7 @@ def train(hyp, opt, device, tb_writer=None):
 
                 # Save last, best and delete
                 torch.save(ckpt, last)
-                if epoch >= (epochs-30):
+                if (epoch+1) % 5 == 0: # save every 5 epochs
                     torch.save(ckpt, last.replace('.pt','_{:03d}.pt'.format(epoch)))
                 if best_fitness == fi:
                     torch.save(ckpt, best)
@@ -383,7 +401,8 @@ def train(hyp, opt, device, tb_writer=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='yolov4-p5.pt', help='initial weights path')
-    parser.add_argument('--freeze', type=int, help='Last layer num to freeze. To freeze layers 0-10, input 10')
+    parser.add_argument('--freeze-backbone', action='store_true', help='Freeze weights of backbone')
+    parser.add_argument('--diff-backbone-lr', type=int, default=1, help='Division factor for backbone learning rate. Eg. 50 to divide learning rate by 50 in backbone')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='', help='hyperparameters path, i.e. data/hyp.scratch.yaml')
