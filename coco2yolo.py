@@ -7,6 +7,7 @@ import json
 class COCO2YOLO:
     def __init__(self, json_file, output):
         self._check_file_and_dir(json_file, output)
+        self.output = output
         self.labels = json.load(open(json_file, 'r', encoding='utf-8'))
         self.coco_id_name_map = self._categories()
         self.coco_name_list = list(self.coco_id_name_map.values())
@@ -73,13 +74,13 @@ class COCO2YOLO:
                 anno_dict[image_id] = anno_infos
         return anno_dict
 
-    def save_classes(self):
-        sorted_classes = list(map(lambda x: x['name'], sorted(self.labels['categories'], key=lambda x: x['id'])))
-        print('coco names', sorted_classes)
-        with open('coco.names', 'w', encoding='utf-8') as f:
-            for cls in sorted_classes:
-                f.write(cls + '\n')
-        f.close()
+    # def save_classes(self):
+    #     sorted_classes = list(map(lambda x: x['name'], sorted(self.labels['categories'], key=lambda x: x['id'])))
+    #     print('coco names', sorted_classes)
+    #     with open('coco.names', 'w', encoding='utf-8') as f:
+    #         for cls in sorted_classes:
+    #             f.write(cls + '\n')
+    #     f.close()
 
     def coco2yolo(self):
         print("loading image info...")
@@ -97,8 +98,8 @@ class COCO2YOLO:
     def _save_txt(self, anno_dict):
         for k, v in anno_dict.items():
             file_name = v[0][0].split(".")[0] + ".txt"
-            with open(os.path.join(output, file_name), 'w', encoding='utf-8') as f:
-                print(k, v)
+            with open(os.path.join(self.output, file_name), 'w', encoding='utf-8') as f:
+                # print(k, v)
                 for obj in v:
                     cat_name = self.coco_id_name_map.get(obj[1])
                     category_id = self.coco_name_list.index(cat_name)

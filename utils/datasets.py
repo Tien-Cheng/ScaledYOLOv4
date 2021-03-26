@@ -1,4 +1,5 @@
 import glob
+import json
 import math
 import os
 import random
@@ -14,9 +15,9 @@ from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from coco2yolo import COCO2YOLO
 from utils.general import xyxy2xywh, xywh2xyxy, torch_distributed_zero_first
 
-help_url = ''
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.dng']
 vid_formats = ['.mov', '.avi', '.mp4', '.mpg', '.mpeg', '.m4v', '.wmv', '.mkv']
 
@@ -296,23 +297,40 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         try:
             f = []  # image files
             for p in path if isinstance(path, list) else [path]:
-                p = str(Path(p))  # os-agnostic
-                parent = str(Path(p).parent) + os.sep
-                if os.path.isfile(p):  # file
-                    with open(p, 'r') as t:
-                        t = t.read().splitlines()
-                        f += [x.replace('./', parent) if x.startswith('./') else x for x in t]  # local to global path
-                elif os.path.isdir(p):  # folder
-                    f += glob.iglob(p + os.sep + '*.*')
+                if Path(p).suffix == '.json':
+                    with open(p) as json_file:
+                        images = json.load(json_file)["images"]
+
+                    for img in images:
+                        file_name = img['file_name']
+                        img_path = Path(p).parent / 'images' / file_name
+                        f += [str(img_path)]
+
+                    # create yolo labels in 'labels' folder
+                    print(f'creating yolo labels for {p}')
+                    label_folder = Path(p).parent / 'labels'
+                    c2y = COCO2YOLO(p, str(label_folder))
+                    c2y.coco2yolo()
+
                 else:
-                    raise Exception('%s does not exist' % p)
+                    p = str(Path(p))  # os-agnostic
+                    parent = str(Path(p).parent) + os.sep
+                    if os.path.isfile(p):  # file
+                        with open(p, 'r') as t:
+                            t = t.read().splitlines()
+                            f += [x.replace('./', parent) if x.startswith('./') else x for x in t]  # local to global path
+                    elif os.path.isdir(p):  # folder
+                        f += glob.iglob(p + os.sep + '*.*')
+                    else:
+                        raise Exception('%s does not exist' % p)
+
             self.img_files = sorted(
                 [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats])
         except Exception as e:
-            raise Exception('Error loading data from %s: %s\nSee %s' % (path, e, help_url))
+            raise Exception('Error loading data from %s: %s' % (path, e))
 
         n = len(self.img_files)
-        assert n > 0, 'No images found in %s. See %s' % (path, help_url)
+        assert n > 0, 'No images found in %s.' % (path)
         bi = np.floor(np.arange(n) / batch_size).astype(np.int)  # batch index
         nb = bi[-1] + 1  # number of batches
 
@@ -321,7 +339,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
-        self.image_weights = image_weights
+        self.image_weights = image_weights  # samples images from the training set weighted by their inverse mAP from the previous epoch's testing
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
@@ -423,7 +441,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             pbar.desc = 'Scanning labels %s (%g found, %g missing, %g empty, %g duplicate, for %g images)' % (
                 cache_path, nf, nm, ne, nd, n)
         if nf == 0:
-            s = 'WARNING: No labels found in %s. See %s' % (os.path.dirname(file) + os.sep, help_url)
+            s = 'WARNING: No labels found in %s.' % (os.path.dirname(file) + os.sep)
             print(s)
             assert not augment, '%s. Can not train without labels.' % s
 
