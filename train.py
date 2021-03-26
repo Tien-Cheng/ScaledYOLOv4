@@ -400,7 +400,7 @@ def train(hyp, opt, device, tb_writer=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='yolov4-p5.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, help='initial weights path')
     parser.add_argument('--freeze-backbone', action='store_true', help='Freeze weights of backbone')
     parser.add_argument('--diff-backbone-lr', type=int, default=1, help='Division factor for backbone learning rate. Eg. 50 to divide learning rate by 50 in backbone')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
