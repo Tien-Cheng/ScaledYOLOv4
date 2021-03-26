@@ -207,6 +207,10 @@ class Scaled_YOLOV4(object):
 
         detections = []
         for i, frame_bbs in enumerate(preds):
+            if frame_bbs is None:
+                detections.append([])
+                continue
+
             im_height, im_width, _ = frame_shapes[i]
             
             # Rescale preds from input size to frame size
@@ -267,9 +271,9 @@ if __name__ == '__main__':
     yolov4 = Scaled_YOLOV4( 
         bgr=True,
         gpu_device=0,
-        model_image_size=512,
+        model_image_size=608,
         half=True,
-        same_size=False
+        same_size=True
     )
 
     img = cv2.imread(imgpath)
