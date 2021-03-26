@@ -49,6 +49,12 @@ docker build -t scaled_yolov4 --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=
 ./run_docker.sh
 ```
 
+## Changes from original repo
+
+- allow freezing of backbone layers
+- allow different backbone learning rate for training
+- allow usage of coco format labels
+
 ## Testing
 
 ```
