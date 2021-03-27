@@ -11,6 +11,7 @@ from threading import Thread
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -352,13 +353,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                             self.img_files]
 
         # Check cache
-        cache_path = str(Path(self.label_files[0]).parent) + '.cache'  # cached labels
-        # if os.path.isfile(cache_path):
-        #     cache = torch.load(cache_path)  # load
-        #     if cache['hash'] != get_hash(self.label_files + self.img_files):  # dataset changed
-        #         cache = self.cache_labels(cache_path)  # re-cache
-        # else:
-        #     cache = self.cache_labels(cache_path)  # cache
+        cache_path = str(Path(self.label_files[0]).parent) + '.cache'
         cache = self.cache_labels(cache_path)
 
         # Get labels
