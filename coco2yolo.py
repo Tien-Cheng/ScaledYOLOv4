@@ -83,17 +83,17 @@ class COCO2YOLO:
     #     f.close()
 
     def coco2yolo(self):
-        print("loading image info...")
+        # print("loading image info...")
         images_info = self._load_images_info()
-        print("loading done, total images", len(images_info))
+        # print("loading done, total images", len(images_info))
 
-        print("start converting...")
+        # print("start converting...")
         anno_dict = self._convert_anno(images_info)
-        print("converting done, total labels", len(anno_dict))
+        # print("converting done, total labels", len(anno_dict))
 
-        print("saving txt file...")
+        # print("saving txt file...")
         self._save_txt(anno_dict)
-        print("saving done")
+        # print("saving done")
 
     def _save_txt(self, anno_dict):
         for k, v in anno_dict.items():
