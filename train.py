@@ -175,7 +175,7 @@ def train(hyp, opt, device, tb_writer=None):
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt, hyp=hyp, augment=True,
                                             cache=opt.cache_images, rect=opt.rect, local_rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
-                                            image_weights=opt.image_weights)
+                                            image_weights=opt.image_weights, quad=opt.quad)
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, opt.data, nc - 1)
@@ -291,6 +291,8 @@ def train(hyp, opt, device, tb_writer=None):
                 # if not torch.isfinite(loss):
                 #     print('WARNING: non-finite loss, ending training ', loss_items)
                 #     return results
+                if opt.quad:
+                    loss *= 4.
 
             # Backward
             scaler.scale(loss).backward()
@@ -430,6 +432,7 @@ if __name__ == '__main__':
     parser.add_argument('--local-rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--logdir', type=str, default='runs/', help='logging directory')
+    parser.add_argument('--quad', action='store_true', help='use quad dataloader')
     opt = parser.parse_args()
 
     # Resume

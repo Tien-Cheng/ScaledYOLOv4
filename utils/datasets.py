@@ -48,7 +48,7 @@ def exif_size(img):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
-                      local_rank=-1, world_size=1, workers=8, image_weights=False):
+                      local_rank=-1, world_size=1, workers=8, image_weights=False, quad=False):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache.
     with torch_distributed_zero_first(local_rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -69,7 +69,7 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                              num_workers=nw,
                                              sampler=train_sampler,
                                              pin_memory=True,
-                                             collate_fn=LoadImagesAndLabels.collate_fn)
+                                             collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn)
     return dataloader, dataset
 
 
@@ -341,7 +341,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
-        self.image_weights = image_weights  # samples images from the training set weighted by their inverse mAP from the previous epoch's testing
+        self.image_weights = image_weights
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
@@ -582,6 +582,32 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+
+    @staticmethod
+    def collate_fn4(batch):
+        img, label, path, shapes = zip(*batch)  # transposed
+        n = len(shapes) // 4
+        img4, label4, path4, shapes4 = [], [], path[:n], shapes[:n]
+
+        ho = torch.tensor([[0., 0, 0, 1, 0, 0]])
+        wo = torch.tensor([[0., 0, 1, 0, 0, 0]])
+        s = torch.tensor([[1, 1, .5, .5, .5, .5]])  # scale
+        for i in range(n):  # zidane torch.zeros(16,3,720,1280)  # BCHW
+            i *= 4
+            if random.random() < 0.5:
+                im = F.interpolate(img[i].unsqueeze(0).float(), scale_factor=2., mode='bilinear', align_corners=False)[
+                    0].type(img[i].type())
+                l = label[i]
+            else:
+                im = torch.cat((torch.cat((img[i], img[i + 1]), 1), torch.cat((img[i + 2], img[i + 3]), 1)), 2)
+                l = torch.cat((label[i], label[i + 1] + ho, label[i + 2] + wo, label[i + 3] + ho + wo), 0) * s
+            img4.append(im)
+            label4.append(l)
+
+        for i, l in enumerate(label4):
+            l[:, 0] = i  # add target image index for build_targets()
+
+        return torch.stack(img4, 0), torch.cat(label4, 0), path4, shapes4
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
