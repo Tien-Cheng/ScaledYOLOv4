@@ -433,7 +433,7 @@ if __name__ == '__main__':
     parser.add_argument('--local-rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--logdir', type=str, default='runs/', help='logging directory')
-    parser.add_argument('--quad', action='store_true', help='use quad dataloader')
+    parser.add_argument('--quad', action='store_true', help='use quad dataloader. batch size must be (2n)^2, n>1')
     opt = parser.parse_args()
 
     # Resume
