@@ -6,34 +6,17 @@ import numpy as np
 import torch
 import yaml
 
-THIS_DIR = Path(__file__).resolve().parent
-CWD = Path.cwd()
-if CWD == THIS_DIR:
-    from models.yolo import Model
-    from utils.torch_utils import select_device, intersect_dicts
-    from utils.general import scale_coords, non_max_suppression, check_img_size
-else:
-    from ScaledYOLOv4.models.yolo import Model
-    from ScaledYOLOv4.utils.torch_utils import select_device, intersect_dicts
-    from ScaledYOLOv4.utils.general import scale_coords, non_max_suppression, check_img_size
+from models.yolo import Model
+from utils.torch_utils import select_device, intersect_dicts
+from utils.general import scale_coords, non_max_suppression, check_img_size
 
 
 class Scaled_YOLOV4(object):
-    if CWD == THIS_DIR:
-        _defaults = {
-            "weights": "weights/yolov4l-mish_.pt",
-            "config": "models/yolov4-csp.yaml",
-            "classes_path": 'data/coco.yaml'
-        }
-    else:
-        _defaults = {
-            "weights": "ScaledYOLOv4/weights/yolov4l-mish_.pt",
-            "config": "ScaledYOLOv4/models/yolov4-csp.yaml",
-            "classes_path": 'ScaledYOLOv4/data/coco.yaml'
-        }
-
+    THIS_DIR = Path(__file__).resolve().parent
     _defaults = {
-        **_defaults,
+        "weights": f"{THIS_DIR}/weights/yolov4l-mish_.pt",
+        "config": f"{THIS_DIR}/models/yolov4-csp.yaml",
+        "classes_path": f"{THIS_DIR}/data/coco.yaml",
         "thresh": 0.4,
         "nms_thresh": 0.5,
         "model_image_size": 608,
