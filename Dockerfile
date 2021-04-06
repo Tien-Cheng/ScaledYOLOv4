@@ -53,27 +53,14 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN python3 -m pip install --no-cache-dir --upgrade pip
 
-# COPY requirements.txt requirements.txt
-# RUN pip3 install --no-cache-dir -r requirements.txt
-
-RUN pip3 install --no-cache-dir \
-    numpy==1.19.4 \
-    tqdm==4.54.1 \
-    pyyaml==5.3.1 \
-    matplotlib==3.3.3 \
-    tensorboard==2.4.0
-
-RUN pip3 install --no-cache-dir  \
-    opencv-python==4.4.0.46 \
-    Pillow==8.0.1 \
-    scipy==1.5.4
-
-RUN pip3 install --no-cache-dir \
-    torch==1.7.0 \
-    torchvision==0.8.1
+COPY requirements.txt requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # install mish_cuda
 RUN cd / && git clone https://github.com/JunnYu/mish-cuda && cd mish-cuda && python3 setup.py build install
+
+# INSTALL PYCOCOTOOLS
+RUN pip3 install --no-cache-dir 'git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI'
 
 # minimal Dockerfile which expects to receive build-time arguments, and creates a new user called “user” (put at end of Dockerfile)
 ARG USER_ID
