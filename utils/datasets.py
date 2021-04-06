@@ -49,7 +49,7 @@ def exif_size(img):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
-                      local_rank=-1, world_size=1, workers=8, image_weights=False, quad=False):
+                      local_rank=-1, world_size=1, workers=8, image_weights=False, quad=False, eval_coco=False):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache.
     with torch_distributed_zero_first(local_rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -60,7 +60,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       cache_images=cache,
                                       single_cls=opt.single_cls,
                                       stride=int(stride),
-                                      pad=pad)
+                                      pad=pad,
+                                      eval_coco=eval_coco)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -70,7 +71,7 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                              num_workers=nw,
                                              sampler=train_sampler,
                                              pin_memory=True,
-                                             collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn)
+                                             collate_fn=LoadImagesAndLabels.collate_fn4 if quad else lambda b, eval_coco=eval_coco: LoadImagesAndLabels.collate_fn(b, eval_coco))
     return dataloader, dataset
 
 
@@ -295,9 +296,10 @@ class LoadStreams:  # multiple IP or RTSP cameras
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_images=False, single_cls=False, stride=32, pad=0.0):
+                 cache_images=False, single_cls=False, stride=32, pad=0.0, eval_coco=False):
         try:
             f = []  # image files
+            img_ids = []
             for p in path if isinstance(path, list) else [path]:
                 if Path(p).suffix == '.json':
                     with open(p) as json_file:
@@ -307,6 +309,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         file_name = img['file_name']
                         img_path = Path(p).parent / 'images' / file_name
                         f += [str(img_path)]
+                        img_ids += [int(img['id'])]
 
                     # create yolo labels in 'labels' folder
                     print(f'creating yolo labels for {p}')
@@ -326,8 +329,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     else:
                         raise Exception('%s does not exist' % p)
 
-            self.img_files = sorted(
-                [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats])
+            f_to_sort = [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats]
+            self.img_files, self.img_ids = (list(t) for t in zip(*sorted(zip(f_to_sort, img_ids))))
         except Exception as e:
             raise Exception('Error loading data from %s: %s' % (path, e))
 
@@ -347,6 +350,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
+        self.eval_coco = eval_coco
 
         # Define labels
         self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt') for x in
@@ -368,6 +372,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             ar = s[:, 1] / s[:, 0]  # aspect ratio
             irect = ar.argsort()
             self.img_files = [self.img_files[i] for i in irect]
+            self.img_ids = [self.img_ids[i] for i in irect]
             self.label_files = [self.label_files[i] for i in irect]
             self.labels = [self.labels[i] for i in irect]
             self.shapes = s[irect]  # wh
@@ -569,14 +574,23 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
 
-        return torch.from_numpy(img), labels_out, self.img_files[index], shapes
+        if not self.eval_coco:
+            return torch.from_numpy(img), labels_out, self.img_files[index], shapes
+        else:
+            return torch.from_numpy(img), labels_out, self.img_files[index], shapes, self.img_ids[index]
 
     @staticmethod
-    def collate_fn(batch):
-        img, label, path, shapes = zip(*batch)  # transposed
-        for i, l in enumerate(label):
-            l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+    def collate_fn(batch, eval_coco=False):
+        if not eval_coco:
+            img, label, path, shapes = zip(*batch)  # transposed
+            for i, l in enumerate(label):
+                l[:, 0] = i  # add target image index for build_targets()
+            return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+        else:
+            img, label, path, shapes, img_id = zip(*batch)  # transposed
+            for i, l in enumerate(label):
+                l[:, 0] = i  # add target image index for build_targets()
+            return torch.stack(img, 0), torch.cat(label, 0), path, shapes, img_id
 
     @staticmethod
     def collate_fn4(batch):
