@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import yaml
 
-from models.yolo import Model
+from models.experimental import attempt_load
 from utils.torch_utils import select_device, intersect_dicts
 from utils.general import scale_coords, non_max_suppression, check_img_size
 
@@ -14,8 +14,7 @@ from utils.general import scale_coords, non_max_suppression, check_img_size
 class Scaled_YOLOV4(object):
     THIS_DIR = Path(__file__).resolve().parent
     _defaults = {
-        "weights": f"{THIS_DIR}/weights/yolov4l-mish_.pt",
-        "config": f"{THIS_DIR}/models/yolov4-csp.yaml",
+        "weights": f"{THIS_DIR}/weights/yolov4-p5_.pt",
         "classes_path": f"{THIS_DIR}/data/coco.yaml",
         "thresh": 0.4,
         "nms_thresh": 0.5,
@@ -33,13 +32,7 @@ class Scaled_YOLOV4(object):
         self.device = select_device(str(gpu_device))
         self.class_names = self._get_class(self.classes_path)
 
-        self.model = Model(cfg=self.config)
-        checkpoint = torch.load(self.weights, map_location=torch.device('cpu'))
-        exclude = ['anchor']  # exclude keys
-        state_dict = checkpoint['model'].float().state_dict()  # to FP32
-        state_dict = intersect_dicts(state_dict, self.model.state_dict(), exclude=exclude)  # intersect
-        self.model.load_state_dict(state_dict, strict=False)
-        self.model.to(self.device).fuse().eval()
+        self.model = attempt_load(self.weights, map_location=self.device)
         if self.half:
             self.model.half()
 
@@ -255,6 +248,7 @@ if __name__ == '__main__':
         bgr=True,
         gpu_device=0,
         model_image_size=608,
+        max_batch_size=1,
         half=True,
         same_size=True
     )
@@ -263,16 +257,17 @@ if __name__ == '__main__':
     bs = 5
     imgs = [ img for _ in range(bs) ]
 
-    n = 10
+    n = 30
     dur = 0
-    for _ in range(n):
+    for i in range(n):
         torch.cuda.synchronize()
         tic = perf_counter()
         dets = yolov4.detect_get_box_in(imgs, box_format='ltrb', classes=None, buffer_ratio=0.0)[0]
         # print('detections: {}'.format(dets))
         torch.cuda.synchronize()
         toc = perf_counter()
-        dur += toc - tic
+        if i>5:
+            dur += toc - tic
     print('Average time taken: {:0.3f}s'.format(dur/n))
 
     cv2.namedWindow('output', cv2.WINDOW_NORMAL)
