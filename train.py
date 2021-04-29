@@ -56,6 +56,10 @@ def train(hyp, opt, device, tb_writer=None):
     nc, names = (1, ['item']) if opt.single_cls else (int(data_dict['nc']), data_dict['names'])  # number classes, names
     assert len(names) == nc, '%g names found for nc=%g dataset in %s' % (len(names), nc, opt.data)  # check
 
+    if opt.clearml:
+        labels = {k: v for v, k in enumerate(names)}
+        task.connect_label_enumeration(labels)
+
     # Model
     pretrained = weights.endswith('.pt')
     if pretrained:
@@ -117,7 +121,7 @@ def train(hyp, opt, device, tb_writer=None):
     # add pg1 with weight_decay
     optimizer.add_param_group({'params': pg1['head'], 'weight_decay': hyp['weight_decay']})
     optimizer.add_param_group({'params': pg1['backbone'], 'lr': backbone_lr, 'weight_decay': hyp['weight_decay']})
-     # add pg2 (biases)
+    # add pg2 (biases)
     optimizer.add_param_group({'params': pg2['head']})
     optimizer.add_param_group({'params': pg2['backbone'], 'lr': backbone_lr})
     print('Optimizer groups: %g .bias, %g conv.weight, %g other' % (len(pg2), len(pg1), len(pg0)))
@@ -127,7 +131,7 @@ def train(hyp, opt, device, tb_writer=None):
     # https://pytorch.org/docs/stable/_modules/torch/optim/lr_scheduler.html#OneCycleLR
     lf = lambda x: (((1 + math.cos(x * math.pi / epochs)) / 2) ** 1.0) * 0.8 + 0.2  # cosine
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    # plot_lr_scheduler(optimizer, scheduler, epochs)
+    # plot_lr_scheduler(optimizer, scheduler, epochs, save_dir=log_dir)
 
     # Resume
     start_epoch, best_fitness = 0, 0.0
@@ -202,9 +206,9 @@ def train(hyp, opt, device, tb_writer=None):
         c = torch.tensor(labels[:, 0])  # classes
         # cf = torch.bincount(c.long(), minlength=nc) + 1.
         # model._initialize_biases(cf.to(device))
-        plot_labels(labels, save_dir=log_dir)
-        if tb_writer:
-            tb_writer.add_histogram('classes', c, 0)
+        plot_labels(labels, save_dir=log_dir, tb_writer=tb_writer)
+        # if tb_writer:
+        #     tb_writer.add_histogram('classes', c, 0)
 
         # Check anchors
         if not opt.noautoanchor:
@@ -213,7 +217,7 @@ def train(hyp, opt, device, tb_writer=None):
     # Start training
     t0 = time.time()
     nw = max(3 * nb, 1e3)  # number of warmup iterations, max(3 epochs, 1k iterations)
-    # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
+    nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     maps = np.zeros(nc)  # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
     scheduler.last_epoch = start_epoch - 1  # do not move
@@ -341,7 +345,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                  single_cls=opt.single_cls,
                                                  dataloader=testloader,
                                                  save_dir=log_dir,
-                                                 plots=epoch == 0 or final_epoch)  # plot first and last)
+                                                 plots=epoch == 0 or final_epoch, # plot first and last
+                                                 tb_writer=(tb_writer, epoch))
 
             # Write
             with open(results_file, 'a') as f:
@@ -356,6 +361,10 @@ def train(hyp, opt, device, tb_writer=None):
                         'val/giou_loss', 'val/obj_loss', 'val/cls_loss']
                 for x, tag in zip(list(mloss[:-1]) + list(results), tags):
                     tb_writer.add_scalar(tag, x, epoch)
+
+                param_names = ['head_other', 'backbone_other', 'head_conv.weights', 'backbone_conv.weights', 'head_bias', 'backbone_bias']
+                for i, param_group in enumerate(optimizer.param_groups):
+                    tb_writer.add_scalar(f'lr/{param_names[i]}', param_group["lr"], epoch)
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
@@ -394,7 +403,7 @@ def train(hyp, opt, device, tb_writer=None):
                 os.system('gsutil cp %s gs://%s/weights' % (f2, opt.bucket)) if opt.bucket and ispt else None  # upload
         # Finish
         if not opt.evolve:
-            plot_results(save_dir=log_dir)  # save as results.png
+            plot_results(save_dir=log_dir, tb_writer=(tb_writer, epoch))  # save as results.png
         print('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
 
     dist.destroy_process_group() if rank not in [-1, 0] else None
@@ -403,6 +412,12 @@ def train(hyp, opt, device, tb_writer=None):
 
 
 if __name__ == '__main__':
+    try:
+        from clearml import Task
+        task = Task.init(project_name="ScaledYOLOv4", task_name="training")
+    except:
+        pass
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, help='initial weights path')
     parser.add_argument('--freeze-backbone', action='store_true', help='Freeze weights of backbone')
@@ -434,6 +449,7 @@ if __name__ == '__main__':
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--logdir', type=str, default='runs/', help='logging directory')
     parser.add_argument('--quad', action='store_true', help='use quad dataloader. batch size must be (2n)^2, n>1')
+    parser.add_argument('--clearml', action='store_true', help='use ClearML for training')
     opt = parser.parse_args()
 
     # Resume
@@ -464,6 +480,10 @@ if __name__ == '__main__':
         opt.global_rank = dist.get_rank()
         assert opt.batch_size % opt.world_size == 0, '--batch-size must be multiple of CUDA device count'
         opt.batch_size = opt.total_batch_size // opt.world_size
+
+    # ClearML
+    if opt.clearml:
+        task.connect_configuration(opt.hyp)
 
     print(opt)
     with open(opt.hyp) as f:

@@ -54,6 +54,9 @@ docker build -t scaled_yolov4 --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=
 - allow freezing of backbone layers
 - allow different backbone learning rate for training
 - allow usage of coco format labels
+- added quad dataloader (see details in DETAILS.md)
+- added `setup.py` to not break imports when used as a submodule
+- support for clearml
 
 ## Testing
 

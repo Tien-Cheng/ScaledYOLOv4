@@ -62,6 +62,8 @@ RUN cd / && git clone https://github.com/JunnYu/mish-cuda && cd mish-cuda && pyt
 # INSTALL PYCOCOTOOLS
 RUN pip3 install --no-cache-dir 'git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI'
 
+RUN pip3 install clearml
+
 # minimal Dockerfile which expects to receive build-time arguments, and creates a new user called “user” (put at end of Dockerfile)
 ARG USER_ID
 ARG GROUP_ID

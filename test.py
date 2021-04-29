@@ -32,7 +32,8 @@ def test(data,
          dataloader=None,
          save_dir=Path(''),  # for saving images
          save_txt=False,  # for auto-labelling
-         plots=True):
+         plots=True,
+         tb_writer=(None, -1)):
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -182,17 +183,21 @@ def test(data,
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
-        # Plot images
-        if plots and batch_i < 1:
-            f = save_dir / ('test_batch%g_gt.jpg' % batch_i)  # filename
-            plot_images(img, targets, paths, str(f), names)  # ground truth
-            f = save_dir / ('test_batch%g_pred.jpg' % batch_i)
-            plot_images(img, output_to_target(output, width, height), paths, str(f), names)  # predictions
+        # Plot results of first batch of images for each epoch
+        if batch_i < 1:
+            f_gt = save_dir / ('test_batch%g_gt.jpg' % batch_i)  # filename
+            mosaic_gt = plot_images(img, targets, paths, str(f_gt), names)  # ground truth
+            f_pred = save_dir / ('test_batch%g_pred.jpg' % batch_i)
+            mosaic_pred = plot_images(img, output_to_target(output, width, height), paths, str(f_pred), names)  # predictions
+
+            if tb_writer[0] is not None:
+                tb_writer[0].add_image(str(f_gt), mosaic_gt, dataformats='HWC', global_step=tb_writer[1])
+                tb_writer[0].add_image(str(f_pred), mosaic_pred, dataformats='HWC', global_step=tb_writer[1])
 
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
-        p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, fname=save_dir / 'precision-recall_curve.png')
+        p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, fname=save_dir / 'precision-recall_curve.png', tb_writer=tb_writer)
         p, r, ap50, ap = p[:, 0], r[:, 0], ap[:, 0], ap.mean(1)  # [P, R, AP@0.5, AP@0.5:0.95]
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class

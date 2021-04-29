@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 from utils.torch_utils import init_seeds, is_parallel
 
+
 # Set printoptions
 torch.set_printoptions(linewidth=320, precision=5, profile='long')
 np.set_printoptions(linewidth=320, formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
@@ -217,7 +218,7 @@ def clip_coords(boxes, img_shape):
     boxes[:, 3].clamp_(0, img_shape[0])  # y2
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, fname='precision-recall_curve.png'):
+def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, fname='precision-recall_curve.png', tb_writer=(None, -1)):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
@@ -283,6 +284,8 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, fname='precision-re
         plt.legend()
         fig.tight_layout()
         fig.savefig(fname, dpi=200)
+        if tb_writer[0] is not None:
+            tb_writer[0].add_figure(fname.stem, fig, global_step=tb_writer[1])
 
     return p, r, ap, f1, unique_classes.astype('int32')
 
@@ -1260,19 +1263,21 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
 
 def plot_lr_scheduler(optimizer, scheduler, epochs=300, save_dir=''):
     # Plot LR simulating training for full epochs
-    optimizer, scheduler = copy(optimizer), copy(scheduler)  # do not modify originals
-    y = []
-    for _ in range(epochs):
-        scheduler.step()
-        y.append(optimizer.param_groups[0]['lr'])
-    plt.plot(y, '.-', label='LR')
-    plt.xlabel('epoch')
-    plt.ylabel('LR')
-    plt.grid()
-    plt.xlim(0, epochs)
-    plt.ylim(0)
-    plt.tight_layout()
-    plt.savefig(Path(save_dir) / 'LR.png', dpi=200)
+    for i, param_group in enumerate(optimizer.param_groups):
+        optimizer, scheduler = copy(optimizer), copy(scheduler)  # do not modify originals
+        y = []
+        for _ in range(epochs):
+            scheduler.step()
+            y.append(param_group['lr'])
+        plt.plot(y, '.-', label='LR')
+        plt.xlabel('epoch')
+        plt.ylabel('LR')
+        plt.grid()
+        plt.xlim(0, epochs)
+        plt.ylim(0)
+        plt.tight_layout()
+        plt.title(f'LR_group{i}')
+        plt.savefig(Path(save_dir) / f'LR_group{i}.png', dpi=200)
 
 
 def plot_test_txt():  # from utils.utils import *; plot_test()
@@ -1337,7 +1342,7 @@ def plot_study_txt(f='study.txt', x=None):  # from utils.utils import *; plot_st
     plt.savefig(f.replace('.txt', '.png'), dpi=200)
 
 
-def plot_labels(labels, save_dir=''):
+def plot_labels(labels, save_dir='', tb_writer=None):
     # plot dataset labels
     c, b = labels[:, 0], labels[:, 1:].transpose()  # classes, boxes
     nc = int(c.max() + 1)  # number of classes
@@ -1352,7 +1357,10 @@ def plot_labels(labels, save_dir=''):
     ax[2].scatter(b[2], b[3], c=hist2d(b[2], b[3], 90), cmap='jet')
     ax[2].set_xlabel('width')
     ax[2].set_ylabel('height')
+    plt.tight_layout()
     plt.savefig(Path(save_dir) / 'labels.png', dpi=200)
+    if tb_writer is not None:
+        tb_writer.add_figure('labels', fig)
     plt.close()
 
 
@@ -1404,7 +1412,7 @@ def plot_results_overlay(start=0, stop=0):  # from utils.utils import *; plot_re
 
 
 def plot_results(start=0, stop=0, bucket='', id=(), labels=(),
-                 save_dir=''):  # from utils.utils import *; plot_results()
+                 save_dir='', tb_writer=(None, -1)):  # from utils.utils import *; plot_results()
     # Plot training 'results*.txt' as seen in https://github.com/ultralytics/yolov3
     fig, ax = plt.subplots(2, 5, figsize=(12, 6))
     ax = ax.ravel()
@@ -1436,3 +1444,5 @@ def plot_results(start=0, stop=0, bucket='', id=(), labels=(),
     fig.tight_layout()
     ax[1].legend()
     fig.savefig(Path(save_dir) / 'results.png', dpi=200)
+    if tb_writer[0] is not None:
+        tb_writer[0].add_figure('results', fig, global_step=tb_writer[1])
