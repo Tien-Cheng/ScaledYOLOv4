@@ -33,6 +33,8 @@ class Scaled_YOLOV4(object):
         self.class_names = self._get_class(self.classes_path)
 
         self.model = attempt_load(self.weights, map_location=self.device)
+        if self.device == torch.device('cpu'):
+            self.half = False
         if self.half:
             self.model.half()
 
