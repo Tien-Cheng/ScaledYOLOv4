@@ -27,6 +27,11 @@ from utils.general import (
 from utils.google_utils import attempt_download
 from utils.torch_utils import init_seeds, ModelEMA, select_device, intersect_dicts
 
+try:
+    from clearml import Task
+except:
+    pass
+
 
 def train(hyp, opt, device, tb_writer=None):
     print(f'Hyperparameters {hyp}')
@@ -56,10 +61,6 @@ def train(hyp, opt, device, tb_writer=None):
     nc, names = (1, ['item']) if opt.single_cls else (int(data_dict['nc']), data_dict['names'])  # number classes, names
     assert len(names) == nc, '%g names found for nc=%g dataset in %s' % (len(names), nc, opt.data)  # check
 
-    if opt.clearml:
-        labels = {k: v for v, k in enumerate(names)}
-        task.connect_label_enumeration(labels)
-
     # Model
     pretrained = weights.endswith('.pt')
     if pretrained:
@@ -87,6 +88,10 @@ def train(hyp, opt, device, tb_writer=None):
         if any(x in k for x in freeze):
             print('freezing %s' % k)
             v.requires_grad = False
+
+    if opt.clearml:
+        labels = {k: v for v, k in enumerate(names)}
+        task.connect_label_enumeration(labels)
 
     # Optimizer
     accumulate = max(round(opt.nominal_batch_size / total_batch_size), 1)  # accumulate loss before optimizing
@@ -412,12 +417,6 @@ def train(hyp, opt, device, tb_writer=None):
 
 
 if __name__ == '__main__':
-    try:
-        from clearml import Task
-        task = Task.init(project_name="ScaledYOLOv4", task_name="training")
-    except:
-        pass
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, help='initial weights path')
     parser.add_argument('--freeze-backbone', action='store_true', help='Freeze weights of backbone')
@@ -452,6 +451,19 @@ if __name__ == '__main__':
     parser.add_argument('--clearml', action='store_true', help='use ClearML for training')
     opt = parser.parse_args()
 
+    opt.data, opt.cfg, opt.hyp = check_file(opt.data), check_file(opt.cfg), check_file(opt.hyp)  # check files
+    assert len(opt.cfg) or len(opt.weights), 'either --cfg or --weights must be specified'
+
+    with open(opt.hyp) as f:
+        hyp = yaml.load(f, Loader=yaml.FullLoader)  # load hyps
+
+    # ClearML
+    if opt.clearml:
+        task = Task.init(project_name="ScaledYOLOv4", task_name="training")
+        task.connect(hyp, name='hyp')
+        task.connect_configuration(opt.data, name='data')
+        task.connect_configuration(opt.cfg, name='model')
+
     # Resume
     if opt.resume:
         last = get_latest_run() if opt.resume == 'get_last' else opt.resume  # resume from most recent run
@@ -460,9 +472,6 @@ if __name__ == '__main__':
         opt.weights = last if opt.resume and not opt.weights else opt.weights
     if opt.local_rank == -1 or ("RANK" in os.environ and os.environ["RANK"] == "0"):
         check_git_status()
-
-    opt.data, opt.cfg, opt.hyp = check_file(opt.data), check_file(opt.cfg), check_file(opt.hyp)  # check files
-    assert len(opt.cfg) or len(opt.weights), 'either --cfg or --weights must be specified'
 
     opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
     device = select_device(opt.device, batch_size=opt.batch_size)
@@ -481,13 +490,7 @@ if __name__ == '__main__':
         assert opt.batch_size % opt.world_size == 0, '--batch-size must be multiple of CUDA device count'
         opt.batch_size = opt.total_batch_size // opt.world_size
 
-    # ClearML
-    if opt.clearml:
-        task.connect_configuration(opt.hyp)
-
     print(opt)
-    with open(opt.hyp) as f:
-        hyp = yaml.load(f, Loader=yaml.FullLoader)  # load hyps
 
     # Train
     if not opt.evolve:
