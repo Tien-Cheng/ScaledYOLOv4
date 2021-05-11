@@ -7,7 +7,7 @@ import torch
 import yaml
 
 from models.experimental import attempt_load
-from utils.torch_utils import select_device, intersect_dicts
+from utils.torch_utils import intersect_dicts
 from utils.general import scale_coords, non_max_suppression, check_img_size
 
 
@@ -29,10 +29,11 @@ class Scaled_YOLOV4(object):
         self.__dict__.update(kwargs) # update with user overrides
 
         self.bgr = bgr
-        self.device = select_device(str(gpu_device))
+        self.device = self._select_device(str(gpu_device))
         self.class_names = self._get_class(self.classes_path)
 
         self.model = attempt_load(self.weights, map_location=self.device)
+        self.model = self.model.to(self.device)
         if self.device == torch.device('cpu'):
             self.half = False
         if self.half:
@@ -44,6 +45,15 @@ class Scaled_YOLOV4(object):
         self._detect([np.zeros((10,10,3), dtype=np.uint8)])
         # self._detect([np.zeros((10,10,3), dtype=np.uint8), np.zeros((10,10,3), dtype=np.uint8), np.zeros((10,10,3), dtype=np.uint8), np.zeros((10,10,3), dtype=np.uint8)])
         print('Warmed up!')
+
+    @staticmethod
+    def _select_device(device):
+        cpu_request = device.lower() == 'cpu'
+        if not cpu_request and not device.isnumeric():  # if device requested other than 'cpu'
+            device = device.split(':')[-1]
+        cuda = False if cpu_request else torch.cuda.is_available()
+        print(f'Using CUDA device {device}')
+        return torch.device(f'cuda:{device}' if cuda else 'cpu')
 
     @staticmethod
     def _get_class(classes_path):
