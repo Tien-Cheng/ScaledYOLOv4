@@ -29,7 +29,7 @@ class Scaled_YOLOV4(object):
         self.__dict__.update(kwargs) # update with user overrides
 
         self.bgr = bgr
-        self.device = self._select_device(str(gpu_device))
+        self.device, self.device_num = self._select_device(str(gpu_device))
         self.class_names = self._get_class(self.classes_path)
 
         self.model = attempt_load(self.weights, map_location=self.device)
@@ -49,11 +49,13 @@ class Scaled_YOLOV4(object):
     @staticmethod
     def _select_device(device):
         cpu_request = device.lower() == 'cpu'
-        if not cpu_request and not device.isnumeric():  # if device requested other than 'cpu'
+        if cpu_request:
+            print('Using CPU')
+            return torch.device('cpu')
+        if not device.isnumeric():
             device = device.split(':')[-1]
-        cuda = False if cpu_request else torch.cuda.is_available()
         print(f'Using CUDA device {device}')
-        return torch.device(f'cuda:{device}' if cuda else 'cpu')
+        return torch.device(f'cuda:{device}'), int(device)
 
     @staticmethod
     def _get_class(classes_path):
@@ -88,7 +90,7 @@ class Scaled_YOLOV4(object):
             batches.append(these_imgs)
 
         preds = []
-        with torch.no_grad():
+        with torch.no_grad() and torch.cuda.device(self.device_num):
             for batch in batches:
                 features = self.model(batch)[0]
                 preds.append(features)
