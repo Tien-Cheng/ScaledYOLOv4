@@ -18,6 +18,7 @@ from utils.general import (
 from utils.torch_utils import select_device, time_synchronized
 
 
+@torch.no_grad()
 def test(data,
          weights=None,
          batch_size=16,
@@ -84,18 +85,16 @@ def test(data,
         targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
+        
+        # Run model
+        t = time_synchronized()
+        inf_out, train_out = model(img, augment=augment)  # inference and training outputs
+        t0 += time_synchronized() - t
 
-        # Disable gradients
-        with torch.no_grad():
-            # Run model
-            t = time_synchronized()
-            inf_out, train_out = model(img, augment=augment)  # inference and training outputs
-            t0 += time_synchronized() - t
-
-            # Run NMS
-            t = time_synchronized()
-            output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres)
-            t1 += time_synchronized() - t
+        # Run NMS
+        t = time_synchronized()
+        output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres)
+        t1 += time_synchronized() - t
 
         # Statistics per image
         for si, pred in enumerate(output):
@@ -239,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
     parser.add_argument('--save-json', action='store_true', help='save a cocoapi-compatible JSON results file')
     parser.add_argument('--task', default='val', help="'val', 'test', 'study'")
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--single-cls', action='store_true', help='treat as single-class dataset')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--verbose', action='store_true', help='report mAP by class')

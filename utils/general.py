@@ -1447,3 +1447,7 @@ def plot_results(start=0, stop=0, bucket='', id=(), labels=(),
     fig.savefig(Path(save_dir) / 'results.png', dpi=200)
     if tb_writer[0] is not None:
         tb_writer[0].add_figure('results', fig, global_step=tb_writer[1])
+
+def one_cycle(y1=0.0, y2=1.0, steps=100):
+    # lambda function for sinusoidal ramp from y1 to y2
+    return lambda x: ((1 - math.cos(x * math.pi / steps)) / 2) * (y2 - y1) + y1

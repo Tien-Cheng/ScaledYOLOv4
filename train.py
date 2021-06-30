@@ -23,7 +23,7 @@ from utils.datasets import create_dataloader
 from utils.general import (
     check_img_size, torch_distributed_zero_first, labels_to_class_weights, plot_labels, check_anchors,
     labels_to_image_weights, compute_loss, plot_images, fitness, strip_optimizer, plot_results,
-    get_latest_run, check_git_status, check_file, increment_dir, print_mutation, plot_evolution)
+    get_latest_run, check_git_status, check_file, increment_dir, print_mutation, plot_evolution, one_cycle)
 from utils.google_utils import attempt_download
 from utils.torch_utils import init_seeds, ModelEMA, select_device, intersect_dicts
 
@@ -134,7 +134,13 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Scheduler https://arxiv.org/pdf/1812.01187.pdf
     # https://pytorch.org/docs/stable/_modules/torch/optim/lr_scheduler.html#OneCycleLR
-    lf = lambda x: (((1 + math.cos(x * math.pi / epochs)) / 2) ** 1.0) * 0.8 + 0.2  # cosine
+    which_lr = 'cosine'
+    if which_lr == 'linear':
+        lf = lambda x: (1 - x / (epochs - 1)) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
+    elif which_lr == 'cosine':
+        lf = lambda x: (((1 + math.cos(x * math.pi / epochs)) / 2) ** 1.0) * 0.8 + 0.2  # cosine
+    elif which_lr == 'one_cycle':
+        lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1 -> hyp['lrf']
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     # plot_lr_scheduler(optimizer, scheduler, epochs, save_dir=log_dir)
 
@@ -155,8 +161,8 @@ def train(hyp, opt, device, tb_writer=None):
         start_epoch = ckpt['epoch'] + 1
         if epochs < start_epoch:
             print('%s has been trained for %g epochs. Fine-tuning for %g additional epochs.' %
-                  (weights, ckpt['epoch'], epochs))
-            epochs += ckpt['epoch']  # finetune additional epochs
+                  (weights, start_epoch, epochs))
+            epochs += start_epoch  # finetune additional epochs
 
         del ckpt, state_dict
     
@@ -221,8 +227,8 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Start training
     t0 = time.time()
-    nw = max(3 * nb, 1e3)  # number of warmup iterations, max(3 epochs, 1k iterations)
-    nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
+    nw = max(round(hyp['warmup_epochs'] * nb), 1e3)  # number of warmup iterations, max(3 epochs, 1k iterations)
+    # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     maps = np.zeros(nc)  # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
     scheduler.last_epoch = start_epoch - 1  # do not move
@@ -274,10 +280,16 @@ def train(hyp, opt, device, tb_writer=None):
                 # model.gr = np.interp(ni, xi, [0.0, 1.0])  # giou loss ratio (obj_loss = 1.0 or giou)
                 accumulate = max(1, np.interp(ni, xi, [1, opt.nominal_batch_size / total_batch_size]).round())
                 for j, x in enumerate(optimizer.param_groups):
-                    # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
-                    x['lr'] = np.interp(ni, xi, [0.1 if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
+                    # bias lr falls from hyp['warmup_bias_lr'] to lr0, all other lrs rise from 0.0 to lr0
+                    # x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)]) # when only 3 param groups
+                    if j == 4:
+                        x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'], x['initial_lr'] * lf(epoch)])
+                    elif j == 5:
+                        x['lr'] = np.interp(ni, xi, [float(hyp['warmup_bias_lr']/opt.diff_backbone_lr), x['initial_lr'] * lf(epoch)])
+                    else:
+                        x['lr'] = np.interp(ni, xi, [0.0, x['initial_lr'] * lf(epoch)])
                     if 'momentum' in x:
-                        x['momentum'] = np.interp(ni, xi, [0.9, hyp['momentum']])
+                        x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
 
             # Multi-scale
             if opt.multi_scale:
@@ -331,9 +343,6 @@ def train(hyp, opt, device, tb_writer=None):
                         # tb_writer.add_graph(model, imgs)  # add model to tensorboard
 
             # end batch ------------------------------------------------------------------------------------------------
-
-        # Scheduler
-        scheduler.step()
 
         # DDP process 0 or single-GPU
         if rank in [-1, 0]:
@@ -393,6 +402,10 @@ def train(hyp, opt, device, tb_writer=None):
                 if best_fitness == fi:
                     torch.save(ckpt, best)
                 del ckpt
+
+        # Scheduler
+        scheduler.step()
+
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training
 
@@ -439,7 +452,7 @@ if __name__ == '__main__':
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
     parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
     parser.add_argument('--name', default='', help='renames results.txt to results_name.txt if supplied')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
@@ -461,8 +474,8 @@ if __name__ == '__main__':
     if opt.clearml:
         task = Task.init(project_name="ScaledYOLOv4", task_name="training")
         task.connect(hyp, name='hyp')
-        task.connect_configuration(opt.data, name='data')
         task.connect_configuration(opt.cfg, name='model')
+        task.connect_configuration(opt.data, name='data')
 
     # Resume
     if opt.resume:
@@ -505,8 +518,12 @@ if __name__ == '__main__':
     else:
         # Hyperparameter evolution metadata (mutation scale 0-1, lower_limit, upper_limit)
         meta = {'lr0': (1, 1e-5, 1e-1),  # initial learning rate (SGD=1E-2, Adam=1E-3)
+                'lrf': (1, 0.01, 1.0),  # final OneCycleLR learning rate (lr0 * lrf)
                 'momentum': (0.1, 0.6, 0.98),  # SGD momentum/Adam beta1
                 'weight_decay': (1, 0.0, 0.001),  # optimizer weight decay
+                'warmup_epochs': (1, 0.0, 5.0),  # warmup epochs (fractions ok)
+                'warmup_momentum': (1, 0.0, 0.95),  # warmup initial momentum
+                'warmup_bias_lr': (1, 0.0, 0.2),  # warmup initial bias lr
                 'giou': (1, 0.02, 0.2),  # GIoU loss gain
                 'cls': (1, 0.2, 4.0),  # cls loss gain
                 'cls_pw': (1, 0.5, 2.0),  # cls BCELoss positive_weight
