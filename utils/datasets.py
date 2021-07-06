@@ -353,7 +353,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.eval_coco = eval_coco
 
         # Define labels
-        self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt') for x in
+        self.label_files = [x.replace('/images/', '/labels/').replace(os.path.splitext(x)[-1], '.txt') for x in
                             self.img_files]
 
         # Check cache
