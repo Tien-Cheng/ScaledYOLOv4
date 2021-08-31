@@ -18,23 +18,24 @@ class ScaledYOLOV4:
         'same_size': False
     }
 
-    def __init__(self, bgr=True, gpu_device=0, **kwargs):
+    def __init__(self, weights, classes_path, cfg, bgr=True, gpu_device=0, **kwargs):
         self.__dict__.update(self._defaults)  # set up default values
         self.__dict__.update(kwargs)  # update with user overrides
 
         self.bgr = bgr
         self.device, self.device_num = self._select_device(str(gpu_device))
-        self.class_names, num_classes = self._get_class(self.classes_path)
+        self.class_names = self._get_class(classes_path)
 
-        model = Model(self.cfg, ch=3, nc=num_classes).to(self.device)
-        self.model = attempt_load_state_dict(model, self.weights, map_location=self.device)
+        model = Model(cfg)
+        self.model = attempt_load_state_dict(model, weights, map_location=self.device)
         self.model.to(self.device)
         if self.device == torch.device('cpu'):
             self.half = False
         if self.half:
             self.model.half()
 
-        self.model_image_size = check_img_size(self.model_image_size, s=self.model.stride.max())
+        gs = max(self.model.stride.max(), 32)
+        self.model_image_size = check_img_size(self.model_image_size, s=gs)
 
         # warm up
         self._detect([np.zeros((10, 10, 3), dtype=np.uint8)])
@@ -60,7 +61,7 @@ class ScaledYOLOV4:
         class_names = data_dict['names']
         if len(class_names) != num_classes:
             raise AssertionError(f'{len(class_names)} names found for nc={num_classes} dataset in {classes_path}')
-        return class_names, num_classes
+        return class_names
 
     def _classname_to_idx(self, classname):
         return self.class_names.index(classname)
@@ -171,7 +172,7 @@ class ScaledYOLOV4:
         new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
         dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
         if auto:  # minimum rectangle
-            dw, dh = np.mod(dw, 32), np.mod(dh, 32)  # wh padding
+            dw, dh = np.mod(dw, 128), np.mod(dh, 128)  # wh padding
         elif scalefill:  # stretch
             dw, dh = 0.0, 0.0
             new_unpad = (new_shape[1], new_shape[0])
