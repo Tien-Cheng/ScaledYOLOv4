@@ -41,15 +41,15 @@ This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Netwo
 
 ## Using as a submodule package
 ```
-## clone ScaledYOLOv4 repository as submodule and checkout yolov4-large-infer branch
+## clone ScaledYOLOv4 repository as submodule and checkout yolov4-large-package branch
 
 ## download desired weights with weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
 
 ## in the main project folder, install ScaledYOLOv4 as an editable package
 cd ScaledYOLOv4 && pip3 install -e .
 
-## import the Scaled_YOLOV4 wrapper class for inference
-from ScaledYOLOv4.scripts.scaled_yolov4 import Scaled_YOLOV4
+## import the Scaled_YOLOV4 wrapper class for inference (refer to scripts/inference.py for example usage)
+from scaledyolov4.scaled_yolov4 import ScaledYOLOV4
 ```
 
 ## Installation
