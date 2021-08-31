@@ -640,7 +640,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, merge=False, 
         boxes, scores = x[:, :4], x[:, 4]
         idxs = [0]*len(n) if agnostic else x[:, 5:6]
         keep_mask = torch.zeros_like(scores, dtype=torch.bool)
-        for class_id in torch.unique(idxs):
+        for class_id in torch.unique(idxs.detach()):
             curr_indices = torch.where(idxs == class_id)[0]
             curr_keep_indices = torchvision.ops.boxes.nms(boxes[curr_indices], scores[curr_indices], iou_thres)
             keep_mask[curr_indices[curr_keep_indices]] = True
