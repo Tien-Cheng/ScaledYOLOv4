@@ -633,9 +633,19 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, merge=False, 
         # x = x[x[:, 4].argsort(descending=True)]
 
         # Batched NMS
-        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
-        boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
-        i = torchvision.ops.boxes.nms(boxes, scores, iou_thres)
+        # c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
+        # boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
+        # print(f'boxes shape: {boxes.shape}')
+        # i = torchvision.ops.boxes.nms(boxes, scores, iou_thres)
+        boxes, scores = x[:, :4], x[:, 4]
+        idxs = [0]*len(n) if agnostic else x[:, 5:6]
+        keep_mask = torch.zeros_like(scores, dtype=torch.bool)
+        for class_id in torch.unique(idxs):
+            curr_indices = torch.where(idxs == class_id)[0]
+            curr_keep_indices = torchvision.ops.boxes.nms(boxes[curr_indices], scores[curr_indices], iou_thres)
+            keep_mask[curr_indices[curr_keep_indices]] = True
+        keep_indices = torch.where(keep_mask)[0]
+        i = keep_indices[scores[keep_indices].sort(descending=True)[1]]
         if i.shape[0] > max_det:  # limit detections
             i = i[:max_det]
         if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
