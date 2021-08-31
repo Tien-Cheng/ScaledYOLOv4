@@ -1,4 +1,4 @@
-# YOLOv4-large
+# YOLOv4-large-dev
 
 ## Adapted/Forked from [WongKinYiu's repo](https://github.com/WongKinYiu/ScaledYOLOv4)
 Last "merge" date: 26th March 2021
@@ -40,25 +40,26 @@ This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Netwo
 | **YOLOv4-P6-attention** | 1280 | **54.3%** | **72.3%** | **59.6%** | **38.7%** | **58.9%** | **66.6%** |
 
 ## Using as a submodule package
+
+- clone ScaledYOLOv4 repository (need not be in same folder as main project) and checkout yolov4-large-dev branch
+- download desired weights with weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
+- in the main project folder, install ScaledYOLOv4 as an editable package
 ```
-## clone ScaledYOLOv4 repository as submodule and checkout yolov4-large-package branch
-
-## download desired weights with weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
-
-## in the main project folder, install ScaledYOLOv4 as an editable package
-cd ScaledYOLOv4 && pip3 install -e .
-
-## import the Scaled_YOLOV4 wrapper class for inference (refer to scripts/inference.py for example usage)
+cd /path/to/ScaledYOLOv4 && pip3 install -e .
+```
+- import the Scaled_YOLOV4 wrapper class for inference (refer to scripts/inference.py for example usage)
+```
 from scaledyolov4.scaled_yolov4 import ScaledYOLOV4
 ```
 
 ## Installation
 
+- build the docker container
 ```
-# build the docker container
 docker build -t scaled_yolov4 --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=$(id -g) .
-
-# run the docker container
+```
+- run the docker container
+```
 ./run_docker.sh
 ```
 
@@ -70,6 +71,7 @@ docker build -t scaled_yolov4 --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=
 - added quad dataloader (see details in DETAILS.md)
 - added `setup.py` to not break imports when used as a submodule
 - support for clearml
+- ScaledYOLOv4 can be used as a package
 
 ## Testing
 
