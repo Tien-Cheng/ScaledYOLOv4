@@ -39,7 +39,7 @@ This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Netwo
 | :-- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
 | **YOLOv4-P6-attention** | 1280 | **54.3%** | **72.3%** | **59.6%** | **38.7%** | **58.9%** | **66.6%** |
 
-## Using as a submodule package
+## Using ScaledYOLOv4 as a package
 
 - clone ScaledYOLOv4 repository (need not be in same folder as main project) and checkout yolov4-large-dev branch
 - download desired weights with weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
