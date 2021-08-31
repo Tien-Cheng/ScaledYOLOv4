@@ -10,17 +10,19 @@ import torch
 import yaml
 from tqdm import tqdm
 
-from models.experimental import attempt_load
-from utils.datasets import create_dataloader
-from utils.general import (
-    check_file, check_img_size, compute_loss, non_max_suppression,
-    scale_coords, xyxy2xywh, clip_coords, plot_images, xywh2xyxy, box_iou, output_to_target, ap_per_class, plot_study_txt)
-from utils.torch_utils import select_device, time_synchronized
+from scaledyolov4.models.experimental import attempt_load_state_dict
+from scaledyolov4.models.yolo import Model
+from scaledyolov4.utils.datasets import create_dataloader
+from scaledyolov4.utils.general import (
+    check_file, check_img_size, non_max_suppression,
+    scale_coords, xyxy2xywh, clip_coords, plot_images, xywh2xyxy, box_iou, output_to_target, ap_per_class)
+from scaledyolov4.utils.torch_utils import select_device, time_synchronized
 
 
 @torch.no_grad()
 def test(data,
          weights=None,
+         cfg=None,
          batch_size=16,
          imgsz=640,
          conf_thres=0.001,
@@ -42,12 +44,19 @@ def test(data,
             shutil.rmtree(out)  # delete output folder
         os.makedirs(out)  # make new output folder
 
+    save_dir.mkdir(parents=True, exist_ok=True)
+
     # Remove previous
     for f in glob.glob(str(save_dir / 'test_batch*.jpg')):
         os.remove(f)
 
     # Load model
-    model = attempt_load(weights, map_location=device)  # load FP32 model
+    with open(data) as f:
+        data = yaml.load(f, Loader=yaml.FullLoader)
+    model = Model(cfg, ch=3, nc=int(data['nc'])).to(device)
+    model = attempt_load_state_dict(model, weights, map_location=device)
+    model.to(device)
+
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(imgsz, s=gs)  # check img_size
 
@@ -58,8 +67,6 @@ def test(data,
 
     # Configure
     model.eval()
-    with open(data) as f:
-        data = yaml.load(f, Loader=yaml.FullLoader)  # model dict
     nc = 1 if single_cls else int(data['nc'])  # number of classes
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
@@ -72,7 +79,7 @@ def test(data,
                                    hyp=None, augment=False, cache=False, pad=0.5, rect=True, eval_coco=True)[0]
 
     seen = 0
-    names = model.names if hasattr(model, 'names') else model.module.names
+    names = data['names']
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
@@ -230,7 +237,8 @@ def test(data,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate with coco GTs. Only works with 1 GT json file.')
-    parser.add_argument('--weights', type=str, default='yolov4-p5.pt', help='model.pt path(s)')
+    parser.add_argument('--weights', type=str, help='model.pt path(s)')
+    parser.add_argument('--cfg', type=str, help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='*.data path')
     parser.add_argument('--batch-size', type=int, default=32, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
@@ -252,6 +260,7 @@ if __name__ == '__main__':
     if opt.task in ['val', 'test']:  # run normally
         test(opt.data,
              opt.weights,
+             opt.cfg,
              opt.batch_size,
              opt.img_size,
              opt.conf_thres,
@@ -272,7 +281,7 @@ if __name__ == '__main__':
             x = list(range(416, 513, 32))
             for i in x:  # img-size
                 print('\nRunning %s point %s...' % (file, i))
-                r, _, t = test(opt.data, weights, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json, opt.single_cls, opt.augment, opt.verbose, save_dir=Path(opt.save_dir))
+                r, _, t = test(opt.data, weights, opt.cfg, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json, opt.single_cls, opt.augment, opt.verbose, save_dir=Path(opt.save_dir))
                 t_txt = 'Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at bs %g\n' % t
                 r_txt = f'mp: {r[0]:.3f}, mr: {r[1]:.3f}, map50: {r[2]:.3f}, map: {r[3]:.3f}\n\n'
                 with open(file, "a+") as f:

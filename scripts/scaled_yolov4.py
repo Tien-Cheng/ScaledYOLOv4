@@ -1,4 +1,3 @@
-from pathlib import Path
 from time import perf_counter
 
 import cv2
@@ -6,33 +5,33 @@ import numpy as np
 import torch
 import yaml
 
-from models.experimental import attempt_load
-from utils.torch_utils import intersect_dicts
-from utils.general import scale_coords, non_max_suppression, check_img_size
+from scaledyolov4.models.experimental import attempt_load_state_dict
+from scaledyolov4.models.yolo import Model
+from scaledyolov4.utils.general import scale_coords, non_max_suppression, check_img_size
 
 
-class Scaled_YOLOV4(object):
-    THIS_DIR = Path(__file__).resolve().parent
+class Scaled_YOLOV4:
     _defaults = {
-        "weights": f"{THIS_DIR}/weights/yolov4-p5_.pt",
-        "classes_path": f"{THIS_DIR}/data/coco.yaml",
-        "thresh": 0.4,
-        "nms_thresh": 0.5,
-        "model_image_size": 608,
-        "max_batch_size": 4,
-        "half": True,
-        "same_size": False
+        'thresh': 0.4,
+        'nms_thresh': 0.5,
+        'model_image_size': 608,
+        'max_batch_size': 4,
+        'half': True,
+        'same_size': False
     }
 
     def __init__(self, bgr=True, gpu_device=0, **kwargs):
-        self.__dict__.update(self._defaults) # set up default values
-        self.__dict__.update(kwargs) # update with user overrides
+        self.__dict__.update(self._defaults)  # set up default values
+        self.__dict__.update(kwargs)  # update with user overrides
 
         self.bgr = bgr
         self.device, self.device_num = self._select_device(str(gpu_device))
         self.class_names = self._get_class(self.classes_path)
 
-        self.model = attempt_load(self.weights, map_location=self.device)
+        with open(self.classes_path) as f:
+            data_dict = yaml.load(f, Loader=yaml.FullLoader)
+        model = Model(self.cfg, ch=3, nc=int(data_dict['nc'])).to(self.device)
+        self.model = attempt_load_state_dict(model, self.weights, map_location=self.device)
         self.model.to(self.device)
         if self.device == torch.device('cpu'):
             self.half = False
@@ -42,7 +41,7 @@ class Scaled_YOLOV4(object):
         self.model_image_size = check_img_size(self.model_image_size, s=self.model.stride.max())
 
         # warm up
-        self._detect([np.zeros((10,10,3), dtype=np.uint8)])
+        self._detect([np.zeros((10, 10, 3), dtype=np.uint8)])
         # self._detect([np.zeros((10,10,3), dtype=np.uint8), np.zeros((10,10,3), dtype=np.uint8), np.zeros((10,10,3), dtype=np.uint8), np.zeros((10,10,3), dtype=np.uint8)])
         print('Warmed up!')
 
@@ -122,12 +121,12 @@ class Scaled_YOLOV4(object):
         '''
         single = False
         if isinstance(images, list):
-            if len(images) <= 0 : 
+            if len(images) <= 0: 
                 return None
             else:
                 assert all(isinstance(im, np.ndarray) for im in images)
         elif isinstance(images, np.ndarray):
-            images = [ images ]
+            images = [images]
             single = True
 
         res, input_shapes = self._detect(images)
@@ -146,14 +145,14 @@ class Scaled_YOLOV4(object):
         '''
         if frames is None or len(frames) == 0:
             return None
-        all_dets = self.detect_get_box_in( frames, box_format='tlbrwh', classes=classes, buffer_ratio=buffer_ratio )
+        all_dets = self.detect_get_box_in(frames, box_format='tlbrwh', classes=classes, buffer_ratio=buffer_ratio)
         
         all_detections = []
         for dets in all_dets:
             detections = []
-            for tlbrwh,confidence,label in dets:
+            for tlbrwh, confidence, label in dets:
                 top, left, bot, right, width, height = tlbrwh
-                detections.append( {'label':label,'confidence':confidence,'t':top,'l':left,'b':bot,'r':right,'w':width,'h':height} ) 
+                detections.append({'label': label, 'confidence': confidence, 't': top, 'l': left, 'b': bot, 'r': right, 'w': width, 'h': height}) 
             all_detections.append(detections)
         return all_detections
 
@@ -228,21 +227,21 @@ class Scaled_YOLOV4(object):
 
                 box_infos = []
                 for c in box_format:
-                    if c == 't':
-                        box_infos.append( int(round(top)) ) 
+                    if c not in [*'tlbrwh']:
+                        raise AssertionError('box_format given in detect unrecognised!')
+                    elif c == 't':
+                        box_infos.append(int(round(top))) 
                     elif c == 'l':
-                        box_infos.append( int(round(left)) )
+                        box_infos.append(int(round(left)))
                     elif c == 'b':
-                        box_infos.append( int(round(bottom)) )
+                        box_infos.append(int(round(bottom)))
                     elif c == 'r':
-                        box_infos.append( int(round(right)) )
+                        box_infos.append(int(round(right)))
                     elif c == 'w':
-                        box_infos.append( int(round(width+width_buffer)) )
+                        box_infos.append(int(round(width+width_buffer)))
                     elif c == 'h':
-                        box_infos.append( int(round(height+height_buffer)) )
-                    else:
-                        assert False,'box_format given in detect unrecognised!'
-                assert len(box_infos) > 0 ,'box infos is blank'
+                        box_infos.append(int(round(height+height_buffer)))
+                assert len(box_infos) > 0, 'box infos is blank'
 
                 detection = (box_infos, cls_conf, cls_name)
                 frame_dets.append(detection)
@@ -252,13 +251,16 @@ class Scaled_YOLOV4(object):
 
 
 if __name__ == '__main__':
-    import cv2
     from pathlib import Path
 
     imgpath = 'test.jpg'
-    assert Path(imgpath).is_file() , 'image not found'
+    assert Path(imgpath).is_file(), 'image not found'
 
-    yolov4 = Scaled_YOLOV4( 
+    cwd = Path.cwd()
+    yolov4 = Scaled_YOLOV4(
+        weights=f'{cwd}/weights/yolov4-p5_-state.pt',
+        classes_path=f'{cwd}/data/coco.yaml',
+        cfg=f'{cwd}/configs/yolov4-p5.yaml',
         bgr=True,
         gpu_device=0,
         model_image_size=608,
@@ -269,7 +271,7 @@ if __name__ == '__main__':
 
     img = cv2.imread(imgpath)
     bs = 5
-    imgs = [ img for _ in range(bs) ]
+    imgs = [img for _ in range(bs)]
 
     n = 30
     dur = 0
@@ -280,18 +282,18 @@ if __name__ == '__main__':
         # print('detections: {}'.format(dets))
         torch.cuda.synchronize()
         toc = perf_counter()
-        if i>5:
+        if i > 5:
             dur += toc - tic
-    print('Average time taken: {:0.3f}s'.format(dur/n))
+    print(f'Average time taken: {(dur/n):0.3f}s')
 
     cv2.namedWindow('output', cv2.WINDOW_NORMAL)
     draw_frame = img.copy()
     for det in dets:
         # print(det)
         bb, score, class_ = det 
-        l,t,r,b = bb
-        cv2.rectangle(draw_frame, (l,t), (r,b), (255,255,0), 1)
-        cv2.putText(draw_frame, class_, (l, t-8), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0))
+        l, t, r, b = bb
+        cv2.rectangle(draw_frame, (l, t), (r, b), (255, 255, 0), 1)
+        cv2.putText(draw_frame, class_, (l, t-8), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0))
     
     cv2.imwrite('test_out.jpg', draw_frame)
     cv2.imshow('output', draw_frame)

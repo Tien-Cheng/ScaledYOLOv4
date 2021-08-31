@@ -23,7 +23,7 @@ from scipy.cluster.vq import kmeans
 from scipy.signal import butter, filtfilt
 from tqdm import tqdm
 
-from utils.torch_utils import init_seeds, is_parallel
+from scaledyolov4.utils.torch_utils import init_seeds, is_parallel
 
 
 # Set printoptions

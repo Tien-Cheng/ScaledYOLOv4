@@ -131,7 +131,7 @@ dmypy.json
 .DS_Store
 
 # model weights
-weights/
+weights/*.pt
 
 # tensorboard
 runs/

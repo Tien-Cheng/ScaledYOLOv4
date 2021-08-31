@@ -16,8 +16,8 @@ from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from coco2yolo import COCO2YOLO
-from utils.general import xyxy2xywh, xywh2xyxy, torch_distributed_zero_first
+from scaledyolov4.utils.coco2yolo import COCO2YOLO
+from scaledyolov4.utils.general import xyxy2xywh, xywh2xyxy, torch_distributed_zero_first
 
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.dng']
 vid_formats = ['.mov', '.avi', '.mp4', '.mpg', '.mpeg', '.m4v', '.wmv', '.mkv']
@@ -328,6 +328,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         f += glob.iglob(p + os.sep + '*.*')
                     else:
                         raise Exception('%s does not exist' % p)
+                    img_ids = list(range(len(f)))
 
             f_to_sort = [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats]
             self.img_files, self.img_ids = (list(t) for t in zip(*sorted(zip(f_to_sort, img_ids))))
@@ -372,7 +373,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             ar = s[:, 1] / s[:, 0]  # aspect ratio
             irect = ar.argsort()
             self.img_files = [self.img_files[i] for i in irect]
-            self.img_ids = [self.img_ids[i] for i in irect]
+            if self.eval_coco:
+                self.img_ids = [self.img_ids[i] for i in irect]
             self.label_files = [self.label_files[i] for i in irect]
             self.labels = [self.labels[i] for i in irect]
             self.shapes = s[irect]  # wh

@@ -4,8 +4,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from models.common import Conv, DWConv
-from utils.google_utils import attempt_download
+from scaledyolov4.models.common import Conv, DWConv
+from scaledyolov4.utils.google_utils import attempt_download
 
 
 class CrossConv(nn.Module):
@@ -148,6 +148,31 @@ def attempt_load(weights, map_location=None):
         return model  # return ensemble
 
 
+def attempt_load_state_dict(models, weights, map_location=None):
+    # Loads an ensemble of models weights=[a,b,c] or a single model weights=[a] or weights=a
+    ensemble_model = Ensemble()
+    models = models if isinstance(models, list) else [models]
+    weights = weights if isinstance(weights, list) else [weights]
+    for i, w in enumerate(weights):
+        # attempt_download(w)
+        state_dict = torch.load(w, map_location=map_location)['state_dict']
+        model = models[i]
+        model.load_state_dict(state_dict)
+        model.fuse().eval()
+        ensemble_model.append(model)
+
+    if map_location == torch.device('cpu'):
+        ensemble_model = revert_sync_batchnorm(ensemble_model)
+
+    if len(ensemble_model) == 1:
+        return ensemble_model[-1]  # return model
+    else:
+        print('Ensemble created with %s\n' % weights)
+        for k in ['names', 'stride']:
+            setattr(ensemble_model, k, getattr(ensemble_model[-1], k))
+        return ensemble_model  # return ensemble
+
+
 class BatchNormXd(nn.modules.batchnorm._BatchNorm):
     def _check_input_dim(self, input):
         # The only difference between BatchNorm1d, BatchNorm2d, BatchNorm3d, etc
@@ -169,9 +194,9 @@ def revert_sync_batchnorm(module):
     if isinstance(module, torch.nn.modules.batchnorm.SyncBatchNorm):
         new_cls = BatchNormXd
         module_output = BatchNormXd(module.num_features,
-                                   module.eps, module.momentum,
-                                   module.affine,
-                                   module.track_running_stats)
+                                    module.eps, module.momentum,
+                                    module.affine,
+                                    module.track_running_stats)
         if module.affine:
             with torch.no_grad():
                 module_output.weight = module.weight

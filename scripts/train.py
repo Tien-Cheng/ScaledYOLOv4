@@ -18,14 +18,14 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 import test  # import test.py to get mAP after each epoch
-from models.yolo import Model
-from utils.datasets import create_dataloader
-from utils.general import (
+from scaledyolov4.models.yolo import Model
+from scaledyolov4.utils.datasets import create_dataloader
+from scaledyolov4.utils.general import (
     check_img_size, torch_distributed_zero_first, labels_to_class_weights, plot_labels, check_anchors,
     labels_to_image_weights, compute_loss, plot_images, fitness, strip_optimizer, plot_results,
     get_latest_run, check_git_status, check_file, increment_dir, print_mutation, plot_evolution, one_cycle)
-from utils.google_utils import attempt_download
-from utils.torch_utils import init_seeds, ModelEMA, select_device, intersect_dicts
+from scaledyolov4.utils.google_utils import attempt_download
+from scaledyolov4.utils.torch_utils import init_seeds, ModelEMA, select_device, intersect_dicts
 
 try:
     from clearml import Task
@@ -67,9 +67,9 @@ def train(hyp, opt, device, tb_writer=None):
         with torch_distributed_zero_first(rank):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc).to(device)  # create
+        model = Model(opt.cfg, ch=3, nc=nc).to(device)  # create
         exclude = ['anchor'] if opt.cfg else []  # exclude keys
-        state_dict = ckpt['model'].float().state_dict()  # to FP32
+        state_dict = ckpt['state_dict']  # to FP32
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(state_dict, strict=False)  # load
         print('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
@@ -148,7 +148,7 @@ def train(hyp, opt, device, tb_writer=None):
     start_epoch, best_fitness = 0, 0.0
     if pretrained:
         # Optimizer
-        if ckpt['optimizer'] is not None:
+        if ckpt['optimizer'] is not None and ckpt['optimizer'] != -1:
             optimizer.load_state_dict(ckpt['optimizer'])
             best_fitness = ckpt['best_fitness']
 
@@ -434,7 +434,7 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, help='initial weights path')
     parser.add_argument('--freeze-backbone', action='store_true', help='Freeze weights of backbone')
     parser.add_argument('--diff-backbone-lr', type=int, default=1, help='Division factor for backbone learning rate. Eg. 50 to divide learning rate by 50 in backbone')
-    parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
+    parser.add_argument('--cfg', type=str, help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
