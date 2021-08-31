@@ -41,7 +41,7 @@ This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Netwo
 
 ## Using as a submodule package
 ```
-## import ScaledYOLOv4 repository as submodule and checkout yolov4-large-infer branch
+## clone ScaledYOLOv4 repository as submodule and checkout yolov4-large-infer branch
 
 ## download desired weights with weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
 
