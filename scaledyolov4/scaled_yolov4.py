@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pkg_resources
 import torch
 import yaml
 
@@ -15,19 +16,22 @@ class ScaledYOLOV4:
         'model_image_size': 608,
         'max_batch_size': 4,
         'half': True,
-        'same_size': False
+        'same_size': False,
+        'weights': pkg_resources.resource_filename('scaledyolov4', 'weights/yolov4-p5_-state.pt'),
+        'cfg': pkg_resources.resource_filename('scaledyolov4', 'configs/yolov4-p5.yaml'),
+        'classes_path': pkg_resources.resource_filename('scaledyolov4', 'data/coco.yaml'),
     }
 
-    def __init__(self, weights, classes_path, cfg, bgr=True, gpu_device=0, **kwargs):
+    def __init__(self, bgr=True, gpu_device=0, **kwargs):
         self.__dict__.update(self._defaults)  # set up default values
         self.__dict__.update(kwargs)  # update with user overrides
 
         self.bgr = bgr
         self.device, self.device_num = self._select_device(str(gpu_device))
-        self.class_names = self._get_class(classes_path)
+        self.class_names = self._get_class(self.classes_path)
 
-        model = Model(cfg)
-        self.model = attempt_load_state_dict(model, weights, map_location=self.device)
+        model = Model(self.cfg)
+        self.model = attempt_load_state_dict(model, self.weights, map_location=self.device)
         self.model.to(self.device)
         if self.device == torch.device('cpu'):
             self.half = False
