@@ -2,6 +2,7 @@ from pathlib import Path
 from time import perf_counter
 
 import cv2
+import pkg_resources
 import torch
 
 from scaledyolov4.scaled_yolov4 import ScaledYOLOV4
@@ -11,11 +12,10 @@ imgpath = Path('test.jpg')
 if not imgpath.is_file():
     raise AssertionError(f'{str(imgpath)} not found')
 
-cwd = Path.cwd()
 yolov4 = ScaledYOLOV4(
-    weights=f'{cwd}/weights/yolov4-p5_-state.pt',
-    classes_path=f'{cwd}/data/coco.yaml',
-    cfg=f'{cwd}/configs/yolov4-p5.yaml',
+    weights=pkg_resources.resource_filename('scaledyolov4', 'weights/yolov4-p6_-state.pt'),
+    cfg=pkg_resources.resource_filename('scaledyolov4', 'configs/yolov4-p6.yaml'),
+    # classes_path=pkg_resources.resource_filename('scaledyolov4', 'data/coco.yaml'),
     bgr=True,
     gpu_device=0,
     model_image_size=608,

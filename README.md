@@ -5,6 +5,39 @@ Last "merge" date: 26th March 2021
 
 This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Network](https://arxiv.org/abs/2011.08036)" using PyTorch framwork.
 
+## Using ScaledYOLOv4 as a package
+
+- clone ScaledYOLOv4 repository (need not be in same folder as main project) and checkout yolov4-large-dev branch
+- download desired weights with scaledyolov4/weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
+- make sure the requirements for ScaledYOLOv4 are installed (including mish-cuda)
+```
+git clone https://github.com/JunnYu/mish-cuda && cd mish-cuda && python3 setup.py build install
+```
+- in the main project folder, install ScaledYOLOv4 as a package (--no-binary is used to skip building of the wheel as the model weights are huge, takes a long time to build)
+```
+pip3 install /path/to/ScaledYOLOv4 --no-binary=:all:
+```
+OR as an editable package (if you need to make changes to the code)
+```
+pip3 install -e /path/to/ScaledYOLOv4
+```
+- import the Scaled_YOLOV4 wrapper class for inference (refer to scripts/inference.py for example usage)
+```
+from scaledyolov4.scaled_yolov4 import ScaledYOLOV4
+```
+
+## Changes from original repo
+
+- allow freezing of backbone layers
+- allow different backbone learning rate for training
+- allow usage of coco format labels
+- added quad dataloader (see details in DETAILS.md)
+- ~added `setup.py` to not break imports when used as a submodule~
+- support for clearml
+- ScaledYOLOv4 can be used as a package
+
+## Results on COCO
+
 | Model | Test Size | AP<sup>test</sup> | AP<sub>50</sub><sup>test</sup> | AP<sub>75</sub><sup>test</sup> | AP<sub>S</sub><sup>test</sup> | AP<sub>M</sub><sup>test</sup> | AP<sub>L</sub><sup>test</sup> | batch1 throughput |
 | :-- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | 
 | **YOLOv4-P5** | 896 | **51.4%** | **69.9%** | **56.3%** | **33.1%** | **55.4%** | **62.4%** | 41 *fps* |
@@ -38,40 +71,6 @@ This is the implementation of "[Scaled-YOLOv4: Scaling Cross Stage Partial Netwo
 | Model | Test Size | AP<sup>val</sup> | AP<sub>50</sub><sup>val</sup> | AP<sub>75</sub><sup>val</sup> | AP<sub>S</sub><sup>val</sup> | AP<sub>M</sub><sup>val</sup> | AP<sub>L</sub><sup>val</sup> |
 | :-- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
 | **YOLOv4-P6-attention** | 1280 | **54.3%** | **72.3%** | **59.6%** | **38.7%** | **58.9%** | **66.6%** |
-
-## Using ScaledYOLOv4 as a package
-
-- clone ScaledYOLOv4 repository (need not be in same folder as main project) and checkout yolov4-large-dev branch
-- download desired weights with weights/get_weights.sh (weights have been re-saved to save the state_dict instead of model object)
-- in the main project folder, install ScaledYOLOv4 as an editable package
-```
-cd /path/to/ScaledYOLOv4 && pip3 install -e .
-```
-- import the Scaled_YOLOV4 wrapper class for inference (refer to scripts/inference.py for example usage)
-```
-from scaledyolov4.scaled_yolov4 import ScaledYOLOV4
-```
-
-## Installation
-
-- build the docker container
-```
-docker build -t scaled_yolov4 --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=$(id -g) .
-```
-- run the docker container
-```
-./run_docker.sh
-```
-
-## Changes from original repo
-
-- allow freezing of backbone layers
-- allow different backbone learning rate for training
-- allow usage of coco format labels
-- added quad dataloader (see details in DETAILS.md)
-- added `setup.py` to not break imports when used as a submodule
-- support for clearml
-- ScaledYOLOv4 can be used as a package
 
 ## Testing
 
