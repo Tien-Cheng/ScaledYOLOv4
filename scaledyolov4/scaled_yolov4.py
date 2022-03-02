@@ -6,7 +6,7 @@ import yaml
 
 from scaledyolov4.models.experimental import attempt_load_state_dict
 from scaledyolov4.models.yolo import Model
-from scaledyolov4.utils.general import scale_coords, non_max_suppression, check_img_size
+from scaledyolov4.utils.general import scale_coords, non_max_suppression, check_img_size, process_raw_data
 
 
 class ScaledYOLOV4:
@@ -102,26 +102,36 @@ class ScaledYOLOV4:
 
         return predictions, input_shapes
 
-    def detect_get_box_in(self, images, box_format='ltrb', classes=None, buffer_ratio=0.0):
+    def detect_get_box_in(self, images, box_format='ltrb', classes=None, buffer_ratio=0.0, raw=False):
         '''
-        Params
-        ------
-        - images : ndarray-like or list of ndarray-like
-        - box_format : string of characters representing format order, where l = left, t = top, r = right, b = bottom, w = width and h = height
-        - classes : list of string, classes to focus on
-        - buffer : float, proportion of buffer around the width and height of the bounding box
-
-        Returns
-        -------
-        if one ndarray given, this returns a list (boxes in one image) of tuple (box_infos, score, predicted_class),
+        Parameters
+        ----------
+        images : ndarray or List[ndarray]
+            ndarray-like for single image or list of ndarray-like
+        box_format : str, optional
+            string of characters representing format order, where l = left, t = top, r = right, b = bottom, w = width and h = height
+        classes : List[str], optional
+            classes to focus on
+        buffer_ratio : float, optional
+            proportion of buffer around the width and height of the bounding box
+        raw : bool, optional
+            return raw inferences instead of detections after postprocessing
         
-        else if a list of ndarray given, this return a list (batch) containing the former as the elements,
+        Returns
+        ------
+        If raw is False:
+            If one ndarray given, this returns a list (boxes in one image) of tuple (box_infos, score, predicted_class),
+            else if a list of ndarray given, this return a list (batch) containing the former as the elements.
+            box_infos : List[float]
+                according to the given box format
+            score : float
+                confidence level of prediction
+            predicted_class : string
 
-        where,
-            - box_infos : list of floats in the given box format
-            - score : float, confidence level of prediction
-            - predicted_class : string
-
+        If raw is True:
+            If one ndarray given, this returns an ndarray of size (max_det, num_classes+5)
+            [x1, y1, x2, y2, objectness, *cls_probabilities], else if a list of ndarray given, this return a list (batch)
+            containing the former as the elements. max_det is 300 by default.
         '''
         single = False
         if isinstance(images, list):
@@ -136,7 +146,10 @@ class ScaledYOLOV4:
 
         res, input_shapes = self._detect(images)
         frame_shapes = [image.shape for image in images]
-        all_dets = self._postprocess(res, input_shapes=input_shapes, frame_shapes=frame_shapes, box_format=box_format, classes=classes, buffer_ratio=buffer_ratio)
+        if raw:
+            all_dets = self._postprocess_raw(res, input_shapes=input_shapes, frame_shapes=frame_shapes, box_format=box_format)
+        else:
+            all_dets = self._postprocess(res, input_shapes=input_shapes, frame_shapes=frame_shapes, box_format=box_format, classes=classes, buffer_ratio=buffer_ratio)
 
         if single:
             return all_dets[0]
@@ -145,9 +158,21 @@ class ScaledYOLOV4:
 
     def get_detections_dict(self, frames, classes=None, buffer_ratio=0.0):
         '''
-        Params: frames, list of ndarray-like
-        Returns: detections, list of dict, whose key: label, confidence, t, l, w, h
+        Parameters
+        ----------
+        frames : List[ndarray]
+            list of input images
+        classes : List[str], optional
+            classes to focus on
+        buffer_ratio : float, optional
+            proportion of buffer around the width and height of the bounding box
+
+        Returns
+        -------
+        List[dict]
+            list of detections for each frame with keys: label, confidence, t, l, w, h
         '''
+
         if frames is None or len(frames) == 0:
             return None
         all_dets = self.detect_get_box_in(frames, box_format='tlbrwh', classes=classes, buffer_ratio=buffer_ratio)
@@ -252,5 +277,25 @@ class ScaledYOLOV4:
                 detection = (box_infos, cls_conf, cls_name)
                 frame_dets.append(detection)
             detections.append(frame_dets)
+
+        return detections
+
+    def _postprocess_raw(self, boxes, input_shapes, frame_shapes, box_format='ltrb'):
+        if box_format != 'ltrb':
+            raise AssertionError('box_format can only be ltrb for raw outputs!')
+
+        preds = process_raw_data(boxes)
+
+        detections = []
+        for i, frame_bbs in enumerate(preds):
+            if frame_bbs is None:
+                detections.append([])
+                continue
+
+            im_height, im_width, _ = frame_shapes[i]
+
+            # Rescale preds from input size to frame size
+            frame_bbs[:, :4] = scale_coords(input_shapes[i][1:], frame_bbs[:, :4], frame_shapes[i]).round()
+            detections.append(frame_bbs.numpy())
 
         return detections

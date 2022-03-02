@@ -1461,3 +1461,31 @@ def plot_results(start=0, stop=0, bucket='', id=(), labels=(),
 def one_cycle(y1=0.0, y2=1.0, steps=100):
     # lambda function for sinusoidal ramp from y1 to y2
     return lambda x: ((1 - math.cos(x * math.pi / steps)) / 2) * (y2 - y1) + y1
+
+def process_raw_data(prediction):
+    """Processes the raw inference results
+
+    Returns:
+        list of tensors with shape: (n, num_classes+5) [x1, y1, x2, y2, objectness, *cls_probabilities]
+    """
+    if prediction.dtype is torch.float16:
+        prediction = prediction.float()  # to FP32
+
+    # Settings
+    max_det = 300  # maximum number of detections per image
+
+    output = [None] * prediction.shape[0]
+    for xi, x in enumerate(prediction):  # image index, image inference
+        # Box (center x, center y, width, height) to (x1, y1, x2, y2)
+        x[:, :4] = xywh2xyxy(x[:, :4])
+
+        # Sort by confidence
+        x = x[x[:, 4].argsort(descending=True)]
+
+        # limit detections
+        if x.shape[0] > max_det:
+            x = x[:max_det]
+
+        output[xi] = x
+
+    return output
