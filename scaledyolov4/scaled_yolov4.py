@@ -33,6 +33,7 @@ class ScaledYOLOV4:
         model = Model(self.cfg)
         self.model = attempt_load_state_dict(model, self.weights, map_location=self.device)
         self.model.to(self.device)
+        self.model.eval()
         if self.device == torch.device('cpu'):
             self.half = False
         if self.half:
@@ -67,9 +68,10 @@ class ScaledYOLOV4:
             raise AssertionError(f'{len(class_names)} names found for nc={num_classes} dataset in {classes_path}')
         return class_names
 
-    def _classname_to_idx(self, classname):
+    def classname_to_idx(self, classname):
         return self.class_names.index(classname)
 
+    @torch.no_grad()
     def _detect(self, list_of_imgs):
         if self.bgr:
             list_of_imgs = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in list_of_imgs]
@@ -80,7 +82,6 @@ class ScaledYOLOV4:
         images = np.ascontiguousarray(images.transpose(0, 3, 1, 2))
         input_shapes = [img.shape for img in images]
         images = torch.from_numpy(images)
-        images = images.to(self.device)
 
         if self.half:
             images = images.half()
@@ -91,10 +92,11 @@ class ScaledYOLOV4:
             batches.append(these_imgs)
 
         preds = []
-        with torch.no_grad() and torch.cuda.device(self.device_num):
+        with torch.cuda.device(self.device_num):
             for batch in batches:
+                batch = batch.to(self.device)
                 features = self.model(batch)[0]
-                preds.append(features)
+                preds.append(features.cpu())
 
         predictions = torch.cat(preds, dim=0)
 
@@ -123,7 +125,7 @@ class ScaledYOLOV4:
         '''
         single = False
         if isinstance(images, list):
-            if len(images) <= 0: 
+            if len(images) <= 0:
                 return None
             else:
                 if not all(isinstance(im, np.ndarray) for im in images):
@@ -155,7 +157,7 @@ class ScaledYOLOV4:
             detections = []
             for tlbrwh, confidence, label in dets:
                 top, left, bot, right, width, height = tlbrwh
-                detections.append({'label': label, 'confidence': confidence, 't': top, 'l': left, 'b': bot, 'r': right, 'w': width, 'h': height}) 
+                detections.append({'label': label, 'confidence': confidence, 't': top, 'l': left, 'b': bot, 'r': right, 'w': width, 'h': height})
             all_detections.append(detections)
         return all_detections
 
@@ -194,7 +196,7 @@ class ScaledYOLOV4:
         return img, ratio, (dw, dh)
 
     def _postprocess(self, boxes, input_shapes, frame_shapes, box_format='ltrb', classes=None, buffer_ratio=0.0):
-        class_idxs = [self._classname_to_idx(name) for name in classes] if classes is not None else None
+        class_idxs = [self.classname_to_idx(name) for name in classes] if classes is not None else None
         preds = non_max_suppression(boxes, self.thresh, self.nms_thresh, classes=class_idxs)
 
         detections = []
@@ -233,7 +235,7 @@ class ScaledYOLOV4:
                     if c not in [*'tlbrwh']:
                         raise AssertionError('box_format given in detect unrecognised!')
                     elif c == 't':
-                        box_infos.append(int(round(top))) 
+                        box_infos.append(int(round(top)))
                     elif c == 'l':
                         box_infos.append(int(round(left)))
                     elif c == 'b':
