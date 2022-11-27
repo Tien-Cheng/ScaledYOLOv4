@@ -575,13 +575,14 @@ def build_targets(p, targets, model):
 def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, merge=False, classes=None, agnostic=False):
     """Performs Non-Maximum Suppression (NMS) on inference results
 
+
+    Input Shape: (no image, no dets, (w, h, x, y, box_conf * cls_conf, cls_id))
     Returns:
          detections with shape: nx6 (x1, y1, x2, y2, conf, cls)
     """
+    
     if prediction.dtype is torch.float16:
         prediction = prediction.float()  # to FP32
-
-    nc = prediction[0].shape[1] - 5  # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
 
     # Settings
@@ -589,7 +590,6 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, merge=False, 
     max_det = 300  # maximum number of detections per image
     time_limit = 10.0  # seconds to quit after
     redundant = True  # require redundant detections
-    multi_label = nc > 1  # multiple labels per box (adds 0.5ms/img)
 
     t = time.time()
     output = [None] * prediction.shape[0]
@@ -602,19 +602,15 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, merge=False, 
         if not x.shape[0]:
             continue
 
-        # Compute conf
-        x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
+        # NOTE: removed this as conf is already calculated in model
+        # # Compute conf 
+        # x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
 
-        # Detections matrix nx6 (xyxy, conf, cls)
-        if multi_label:
-            i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
-            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
-        else:  # best class only
-            conf, j = x[:, 5:].max(1, keepdim=True)
-            x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+        # conf, j = x[:, 5:].max(1, keepdim=True)
+        x = torch.cat((box, x[:, 4:5], x[:, 5:6]), 1)
 
         # Filter by class
         if classes:
