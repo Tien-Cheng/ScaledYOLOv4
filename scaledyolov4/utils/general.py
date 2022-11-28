@@ -1462,7 +1462,7 @@ def process_raw_data(prediction):
     """Processes the raw inference results
 
     Returns:
-        list of tensors with shape: (n, num_classes+5) [x1, y1, x2, y2, objectness, *cls_probabilities]
+        list of tensors with shape: (n, num_classes+5) [x1, y1, x2, y2, box_prob * class_prob, class_id]
     """
     if prediction.dtype is torch.float16:
         prediction = prediction.float()  # to FP32
@@ -1476,7 +1476,7 @@ def process_raw_data(prediction):
         x[:, :4] = xywh2xyxy(x[:, :4])
 
         # Sort by confidence
-        x = x[x[:, 4].argsort(descending=True)]
+        # x = x[x[:, 4].argsort(descending=True)]
 
         # limit detections
         if x.shape[0] > max_det:
